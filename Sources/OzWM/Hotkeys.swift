@@ -1,0 +1,129 @@
+import Carbon.HIToolbox
+import Foundation
+
+/// Global hotkeys via Carbon's RegisterEventHotKey (needs no extra permission).
+final class HotkeyCenter {
+    static let shared = HotkeyCenter()
+
+    private var refs: [EventHotKeyRef] = []
+    private var actions: [UInt32: () -> Void] = [:]
+    private var nextID: UInt32 = 1
+    private var installed = false
+
+    private func installHandler() {
+        guard !installed else { return }
+        installed = true
+        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
+            var hk = EventHotKeyID()
+            let status = GetEventParameter(event, EventParamName(kEventParamDirectObject),
+                                           EventParamType(typeEventHotKeyID), nil,
+                                           MemoryLayout<EventHotKeyID>.size, nil, &hk)
+            if status == noErr { HotkeyCenter.shared.fire(hk.id) }
+            return noErr
+        }, 1, &spec, nil, nil)
+    }
+
+    private func fire(_ id: UInt32) {
+        actions[id]?()
+    }
+
+    func register(_ combo: String, action: @escaping () -> Void) -> Bool {
+        installHandler()
+        guard let (code, mods) = HotkeyCenter.parse(combo) else { return false }
+        let id = nextID
+        nextID += 1
+        var ref: EventHotKeyRef?
+        let hkID = EventHotKeyID(signature: OSType(0x4F5A_574D), id: id) // 'OZWM'
+        let status = RegisterEventHotKey(code, mods, hkID, GetApplicationEventTarget(), 0, &ref)
+        guard status == noErr, let ref else { return false }
+        refs.append(ref)
+        actions[id] = action
+        return true
+    }
+
+    func unregisterAll() {
+        refs.forEach { UnregisterEventHotKey($0) }
+        refs = []
+        actions = [:]
+    }
+
+    /// Parses "ctrl+alt+shift+k", "cmd+option+left", "hyper+1".
+    static func parse(_ combo: String) -> (UInt32, UInt32)? {
+        let parts = combo.lowercased().split(separator: "+").map { $0.trimmingCharacters(in: .whitespaces) }
+        guard let keyName = parts.last, let code = keyCode(for: keyName) else { return nil }
+        var mods: UInt32 = 0
+        for m in parts.dropLast() {
+            switch m {
+            case "cmd", "command", "super": mods |= UInt32(cmdKey)
+            case "alt", "option", "opt": mods |= UInt32(optionKey)
+            case "ctrl", "control": mods |= UInt32(controlKey)
+            case "shift": mods |= UInt32(shiftKey)
+            case "hyper": mods |= UInt32(cmdKey | optionKey | controlKey | shiftKey)
+            case "meh": mods |= UInt32(optionKey | controlKey | shiftKey)
+            default: return nil
+            }
+        }
+        return (UInt32(code), mods)
+    }
+
+    /// Named keys ("left", "f5", …) are fixed; a single character is looked up in the
+    /// active keyboard layout first, so "ö", "ğ", "ı" or "i" hit the key that types them
+    /// (Turkish Q puts "i" where US has "'"), falling back to US key positions.
+    static func keyCode(for name: String) -> Int? {
+        if name.count == 1, let code = layoutKeyCodes()[name] { return code }
+        return keyCodes[name]
+    }
+
+    /// Character -> key code for the current keyboard layout (unmodified key presses).
+    private static func layoutKeyCodes() -> [String: Int] {
+        guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+              let ptr = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return [:] }
+        let data = Unmanaged<CFData>.fromOpaque(ptr).takeUnretainedValue() as Data
+        var map: [String: Int] = [:]
+        data.withUnsafeBytes { raw in
+            guard let layout = raw.bindMemory(to: UCKeyboardLayout.self).baseAddress else { return }
+            // 0..<64 covers the main keys; the keypad (65+) would shadow "." "-" and digits.
+            for code in 0..<64 {
+                var dead: UInt32 = 0
+                var length = 0
+                var chars = [UniChar](repeating: 0, count: 4)
+                let status = UCKeyTranslate(layout, UInt16(code), UInt16(kUCKeyActionDown), 0,
+                                            UInt32(LMGetKbdType()), OptionBits(kUCKeyTranslateNoDeadKeysBit),
+                                            &dead, chars.count, &length, &chars)
+                guard status == noErr, length > 0 else { continue }
+                let ch = String(utf16CodeUnits: chars, count: length)
+                if map[ch] == nil { map[ch] = code }
+            }
+        }
+        return map
+    }
+
+    private static let keyCodes: [String: Int] = {
+        var m: [String: Int] = [
+            "a": kVK_ANSI_A, "b": kVK_ANSI_B, "c": kVK_ANSI_C, "d": kVK_ANSI_D, "e": kVK_ANSI_E,
+            "f": kVK_ANSI_F, "g": kVK_ANSI_G, "h": kVK_ANSI_H, "i": kVK_ANSI_I, "j": kVK_ANSI_J,
+            "k": kVK_ANSI_K, "l": kVK_ANSI_L, "m": kVK_ANSI_M, "n": kVK_ANSI_N, "o": kVK_ANSI_O,
+            "p": kVK_ANSI_P, "q": kVK_ANSI_Q, "r": kVK_ANSI_R, "s": kVK_ANSI_S, "t": kVK_ANSI_T,
+            "u": kVK_ANSI_U, "v": kVK_ANSI_V, "w": kVK_ANSI_W, "x": kVK_ANSI_X, "y": kVK_ANSI_Y,
+            "z": kVK_ANSI_Z,
+            "0": kVK_ANSI_0, "1": kVK_ANSI_1, "2": kVK_ANSI_2, "3": kVK_ANSI_3, "4": kVK_ANSI_4,
+            "5": kVK_ANSI_5, "6": kVK_ANSI_6, "7": kVK_ANSI_7, "8": kVK_ANSI_8, "9": kVK_ANSI_9,
+            "left": kVK_LeftArrow, "right": kVK_RightArrow, "up": kVK_UpArrow, "down": kVK_DownArrow,
+            "return": kVK_Return, "enter": kVK_Return, "space": kVK_Space, "tab": kVK_Tab,
+            "escape": kVK_Escape, "esc": kVK_Escape, "delete": kVK_Delete, "backspace": kVK_Delete,
+            "forwarddelete": kVK_ForwardDelete, "home": kVK_Home, "end": kVK_End,
+            "pageup": kVK_PageUp, "pagedown": kVK_PageDown,
+            "minus": kVK_ANSI_Minus, "equal": kVK_ANSI_Equal, "=": kVK_ANSI_Equal,
+            "[": kVK_ANSI_LeftBracket, "]": kVK_ANSI_RightBracket, ";": kVK_ANSI_Semicolon,
+            "'": kVK_ANSI_Quote, ",": kVK_ANSI_Comma, "comma": kVK_ANSI_Comma, ".": kVK_ANSI_Period,
+            "period": kVK_ANSI_Period, "/": kVK_ANSI_Slash, "slash": kVK_ANSI_Slash,
+            "\\": kVK_ANSI_Backslash, "`": kVK_ANSI_Grave, "grave": kVK_ANSI_Grave,
+        ]
+        let fkeys = [kVK_F1, kVK_F2, kVK_F3, kVK_F4, kVK_F5, kVK_F6, kVK_F7, kVK_F8, kVK_F9,
+                     kVK_F10, kVK_F11, kVK_F12, kVK_F13, kVK_F14, kVK_F15, kVK_F16, kVK_F17,
+                     kVK_F18, kVK_F19, kVK_F20]
+        for (i, k) in fkeys.enumerated() { m["f\(i + 1)"] = k }
+        return m
+    }()
+}
