@@ -1,13 +1,35 @@
 import Cocoa
 
 enum SystemActions {
-    private static let missionControlBinary = "/System/Applications/Mission Control.app/Contents/MacOS/Mission Control"
+    // Launching the "Mission Control" helper binary stopped triggering the overlay on
+    // recent macOS (confirmed broken on macOS 27). Instead we synthesize the default
+    // keyboard shortcuts, which the window server still honours.
+    //   Mission Control: F3 (the Mission Control media key) — same key the user presses.
+    //   App Exposé:      Control+Down Arrow.
+    //   Show Desktop:    F11 (the Show Desktop media key).
+    private enum Key {
+        static let f3: CGKeyCode = 0x63
+        static let f11: CGKeyCode = 0x67
+        static let downArrow: CGKeyCode = 0x7D
+    }
 
-    /// Same as F3 / the old three-finger swipe up.
-    static func missionControl() { run(missionControlBinary, []) }
+    /// Same as pressing F3 / the old three-finger swipe up.
+    static func missionControl() { postKey(Key.f3) }
     /// Windows of the current app (old three-finger swipe down).
-    static func appExpose() { run(missionControlBinary, ["2"]) }
-    static func showDesktop() { run(missionControlBinary, ["1"]) }
+    static func appExpose() { postKey(Key.downArrow, flags: .maskControl) }
+    static func showDesktop() { postKey(Key.f11) }
+
+    /// Sends a key press to the window server (no Accessibility/Input Monitoring needed
+    /// beyond Oz's existing grant; it drives the same symbolic hotkeys as the keyboard).
+    private static func postKey(_ key: CGKeyCode, flags: CGEventFlags = []) {
+        let source = CGEventSource(stateID: .hidSystemState)
+        let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true)
+        let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)
+        down?.flags = flags
+        up?.flags = flags
+        down?.post(tap: .cghidEventTap)
+        up?.post(tap: .cghidEventTap)
+    }
 
     static func launchpad() {
         for path in ["/System/Applications/Launchpad.app", "/System/Applications/Apps.app"]
