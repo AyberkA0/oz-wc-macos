@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func shutdown() {
         gestures.stop()
         if started { wm.restoreAll() }
+        restoreWallpaperTinting()
     }
 
     // MARK: Startup
@@ -56,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
             reason: "Window management reacts to gestures in real time")
         Watchdog.start()
+        disableWallpaperTinting()
 
         wm.rulesProvider = { [unowned self] w in config.rules(for: w) }
         wm.emit = { [unowned self] event, payload in config.emit(event, payload) }
@@ -161,34 +163,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Wallpaper tinting
 
-    /// macOS tints window backgrounds with the wallpaper colour behind them. Windows Oz
-    /// parks off screen lose that tint, so their stand-ins can look slightly different.
-    /// Turning the tint off (System Settings › Appearance) removes the difference entirely.
+    /// macOS tints window backgrounds with the wallpaper colour behind them (System Settings ›
+    /// Appearance › "Allow wallpaper tinting in windows"). Windows Oz parks off screen lose
+    /// that tint, so the stand-ins drawn from their captures would look different from the
+    /// real windows. Oz therefore keeps the tint off while it runs and restores the user's
+    /// choice when it quits.
+    private static let tintKey = "AppleReduceDesktopTinting" as CFString
+    private static let savedTintKey = "tintingWasOnBeforeOz"
+
     private var wallpaperTintingOn: Bool {
-        !(CFPreferencesCopyAppValue("AppleReduceDesktopTinting" as CFString,
-                                    kCFPreferencesAnyApplication) as? Bool ?? false)
+        CFPreferencesAppSynchronize(kCFPreferencesAnyApplication)
+        return !(CFPreferencesCopyAppValue(AppDelegate.tintKey, kCFPreferencesAnyApplication) as? Bool ?? false)
     }
 
-    @objc private func toggleWallpaperTinting() {
-        let turnOff = wallpaperTintingOn
-        if turnOff {
-            NSApp.activate(ignoringOtherApps: true)
-            let alert = NSAlert()
-            alert.messageText = "Turn off wallpaper tinting in windows?"
-            alert.informativeText = """
-            macOS tints window backgrounds with the colour of the wallpaper behind them. \
-            Windows that Oz draws from a capture (sliding off the top, slow apps while \
-            scrolling) can't get that tint, so they look slightly different.
+    private func disableWallpaperTinting() {
+        guard wallpaperTintingOn else { return }
+        UserDefaults.standard.set(true, forKey: AppDelegate.savedTintKey)
+        SystemActions.run("/usr/bin/defaults", ["write", "-g", "AppleReduceDesktopTinting", "-bool", "true"])
+        Log.info("macOS wallpaper tinting turned off (restored when Oz quits)")
+    }
 
-            This changes the macOS setting System Settings › Appearance › \
-            "Allow wallpaper tinting in windows". Apps pick it up when they are reopened.
-            """
-            alert.addButton(withTitle: "Turn Off")
-            alert.addButton(withTitle: "Cancel")
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
-        }
-        SystemActions.run("/usr/bin/defaults", ["write", "-g", "AppleReduceDesktopTinting", "-bool", turnOff ? "true" : "false"])
-        Log.info("wallpaper tinting \(turnOff ? "off" : "on")")
+    private func restoreWallpaperTinting() {
+        guard UserDefaults.standard.bool(forKey: AppDelegate.savedTintKey) else { return }
+        UserDefaults.standard.removeObject(forKey: AppDelegate.savedTintKey)
+        // Synchronous: this runs while quitting.
+        _ = SystemActions.shellSync("/usr/bin/defaults write -g AppleReduceDesktopTinting -bool false")
+        Log.info("macOS wallpaper tinting restored")
     }
 
     // MARK: Menu bar
@@ -246,7 +246,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             item("Trackpad: Restore macOS Gestures", #selector(restoreTrackpad))
         }
-        item("Wallpaper Tinting in Windows", #selector(toggleWallpaperTinting)).state = wallpaperTintingOn ? .on : .off
         menu.addItem(.separator())
         item("Quit Oz", #selector(quit), key: "q")
     }

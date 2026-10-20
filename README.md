@@ -46,7 +46,7 @@ On first launch:
 
 > **Development note:** with an ad-hoc signature every build changes the code signature and macOS drops the Accessibility permission. Run `./scripts/create-signing-cert.sh` once: it adds a self-signed "Oz Local Signing" identity to your login keychain, `make app` uses it automatically and the permissions survive rebuilds (`SIGN_ID=...` for another identity).
 
-The ▤ menu bar icon: toggle tiling, retile, edit/reload the config, open the log, trackpad setup, wallpaper tinting, quit. When Oz quits it brings every window it hid back on screen.
+The ▤ menu bar icon: toggle tiling, retile, edit/reload the config, open the log, trackpad setup, quit. When Oz quits it brings every window it hid back on screen.
 
 ## Widths and rows
 
@@ -144,7 +144,7 @@ build/Oz.app/Contents/MacOS/OzWM msg setHeight 0.5
 - Windows are moved and resized through the Accessibility API (AXUIElement); new, closed and focused windows are tracked with AXObserver. Moves are applied off the main thread, one queue per app, keeping only the newest target per window, so a slow app never stalls scrolling. Layout runs once per display frame (CADisplayLink).
 - **Sliding off the top.** macOS doesn't let a window go above the menu bar. With `topOverflow: "slide"` (default), a window leaving the top edge is parked off screen and drawn in its place from a capture of its own content, cut at the top edge, so it slides off just like at the bottom. The half-visible window stays visible at rest and is clickable (brings the real window back); with `livePeek` it keeps updating at `livePeekFPS` (24) so video keeps playing. Captures happen only when a window starts to peek, and the live stream stops after ~2 s without changes, so macOS's purple screen-recording indicator only shows while something is actually being captured. Use `topOverflow: "shrink"` (pinned and shrunk) or `"hide"` to never capture. Windows fully outside the viewport are parked in the bottom-right corner (like AeroSpace).
 - **Slow apps.** Some apps (e.g. WhatsApp) sometimes take 50–120 ms to apply a move, so their window would trail behind while scrolling. Oz tracks each app's recent worst move time; windows of apps above `slowAppThreshold` (30 ms) are drawn from a capture while the strip moves and the real window is placed once, when the motion ends (`slowAppProxy`).
-- **Wallpaper tinting.** macOS tints window backgrounds with the colour of the wallpaper behind them; a window parked off screen loses that tint, so its capture looks slightly greyer. Oz measures the shift against an on-screen capture and corrects live frames, and cross-fades when handing back to the real window. To remove the difference entirely, turn off *Wallpaper Tinting in Windows* from the Oz menu (System Settings › Appearance).
+- **Wallpaper tinting.** macOS tints window backgrounds with the colour of the wallpaper behind them (System Settings › Appearance › *Allow wallpaper tinting in windows*). A window parked off screen loses that tint, so a capture of it would look greyer than the real window. Oz therefore turns this macOS setting off while it runs and restores your previous choice when it quits. Apps that were already open pick the change up when reopened. As a fallback Oz also corrects the tint shift in live captures and cross-fades when handing back to the real window.
 - Scrolling doesn't change focus; focus changes when you click a window or use a focus command.
 
 ## Known limitations
