@@ -53,6 +53,8 @@ public struct LayoutItem {
     public let placement: Placement
     /// Full height of the window's row (a shrunk window is shorter than this).
     public let rowHeight: CGFloat
+    /// Where the whole window would be, ignoring the screen edges.
+    public let frame: CGRect
 }
 
 public enum InsertPosition: String {
@@ -70,21 +72,29 @@ public struct LayoutParams {
     public var hardTop: CGFloat
     /// Windows whose top is below this are hidden.
     public var hardBottom: CGFloat
+    /// The scroll area ends above the screen's bottom: windows are cut off at `hardBottom`
+    /// like at the top, instead of running off the screen.
+    public var cutBottom: Bool
     public var gap: CGFloat
     public var widthRatio: CGFloat
     public var topOverflow: TopOverflow
     public var minVisible: CGFloat
 
     public init(viewport: CGRect, hardTop: CGFloat, hardBottom: CGFloat, gap: CGFloat,
-                widthRatio: CGFloat = 1, topOverflow: TopOverflow = .shrink, minVisible: CGFloat = 80) {
+                widthRatio: CGFloat = 1, topOverflow: TopOverflow = .shrink, minVisible: CGFloat = 80,
+                cutBottom: Bool = false) {
         self.viewport = viewport
         self.hardTop = hardTop
         self.hardBottom = hardBottom
+        self.cutBottom = cutBottom
         self.gap = gap
         self.widthRatio = widthRatio
         self.topOverflow = topOverflow
         self.minVisible = minVisible
     }
+
+    /// Lowest y anything may be drawn at (infinite when windows may run off the screen).
+    public var clipBottom: CGFloat { cutBottom ? hardBottom : .greatestFiniteMagnitude }
 }
 
 /// A vertically scrolling strip of rows: one per (space, display).
@@ -97,8 +107,11 @@ public final class Strip {
     public var focused: WinID?
     /// Width share of each window (default 1). Windows sharing a row split it in proportion
     /// to their shares; a window alone in its row with a share below 1 takes only that
-    /// fraction of the row and leaves the rest empty (until `packRow` fills it).
+    /// fraction of the row and leaves the rest empty.
     public var widthWeights: [WinID: CGFloat] = [:]
+    /// Where a narrowed window alone in its row sits: the space left of it, as a fraction of
+    /// the row's width (default 0, the left edge). Set by resizing it from either side.
+    public var widthOffsets: [WinID: CGFloat] = [:]
 
     public init() {}
 
@@ -150,12 +163,29 @@ public final class Strip {
         rows.insert(row, at: index)
     }
 
+    /// Inserts `id` as a row of its own just above the row holding `anchor` (at the end
+    /// when there is no anchor). Used when a window is dropped between two rows.
+    public func insertRow(_ id: WinID, height: CGFloat, before anchor: WinID?) {
+        let index = anchor.flatMap { locate($0)?.row } ?? rows.count
+        rows.insert(Row([id], height: height), at: index)
+    }
+
+    /// Puts `id` next to `anchor` in its row, on its right or left, sharing the row's width.
+    @discardableResult
+    public func insertBeside(_ id: WinID, anchor: WinID, right: Bool) -> Bool {
+        guard let (r, c) = locate(anchor) else { return false }
+        rows[r].windows.insert(id, at: right ? c + 1 : c)
+        widthWeights[id] = nil
+        return true
+    }
+
     /// Removes a window; returns the neighbour that should receive focus.
     @discardableResult
     public func remove(_ id: WinID) -> WinID? {
         guard let (r, c) = locate(id) else { return nil }
         rows[r].windows.remove(at: c)
         widthWeights[id] = nil
+        widthOffsets[id] = nil
         var neighbor: WinID?
         if rows[r].windows.isEmpty {
             rows.remove(at: r)
@@ -199,6 +229,40 @@ public final class Strip {
         let t = r + delta
         guard rows.indices.contains(t) else { return false }
         rows.swapAt(r, t)
+        return true
+    }
+
+    /// Moving up/down into a row that has room for this window: the next row holds a single
+    /// narrowed window and this one fits in the space beside it. Then it joins that row on the
+    /// side it's already on, the two sharing the row in proportion to their widths. False (and
+    /// nothing changes) when it doesn't fit; the caller then moves it as usual.
+    @discardableResult
+    public func joinIfFits(_ id: WinID, by delta: Int) -> Bool {
+        guard let (r, c) = locate(id) else { return false }
+        var t = r + delta
+        guard rows.indices.contains(t), rows[t].windows.count == 1, let other = rows[t].windows.first,
+              weight(other) < 1 else { return false }
+        let row = rows[r].windows
+        // Its share of the row width now: alone, its own (narrowed) width; shared, its part.
+        let share = row.count == 1 ? min(weight(id), 1) : (widthFraction(id) ?? 1)
+        guard share <= 1 - weight(other) + 0.02 else { return false }
+        // Which side of the other window it is on (by the middles of the two).
+        let mine: CGFloat
+        if row.count == 1 {
+            mine = (widthOffsets[id] ?? 0) + share / 2
+        } else {
+            mine = row[..<c].compactMap { widthFraction($0) }.reduce(0, +) + share / 2
+        }
+        let right = mine >= (widthOffsets[other] ?? 0) + weight(other) / 2
+        rows[r].windows.remove(at: c)
+        if rows[r].windows.isEmpty {
+            rows.remove(at: r)
+            if t > r { t -= 1 }
+        }
+        widthWeights[id] = share
+        widthOffsets[id] = nil
+        widthOffsets[other] = nil
+        if right { rows[t].windows.append(id) } else { rows[t].windows.insert(id, at: 0) }
         return true
     }
 
@@ -283,39 +347,29 @@ public final class Strip {
         return sorted.last { $0 < cur - 0.01 } ?? sorted.last
     }
 
-    /// Sets the share of a window alone in its row (`nil`/>= 0.97 means full width).
+    /// Sets the share of a window alone in its row (`nil`/>= 0.97 means full width). It keeps
+    /// its place in the row, moved left only as far as it needs to still fit.
     public func setLoneWidth(_ id: WinID, _ share: CGFloat?) {
-        guard let s = share, s < 0.97 else { widthWeights[id] = nil; return }
+        guard let s = share, s < 0.97 else {
+            widthWeights[id] = nil
+            widthOffsets[id] = nil
+            return
+        }
         widthWeights[id] = max(s, 0.1)
+        if let o = widthOffsets[id] { setLoneOffset(id, o) }
     }
 
-    /// Fills the empty space beside a narrowed window that is alone in its row with adjacent
-    /// lone windows that fit (rows below first, then above). They then share the row in
-    /// proportion to their widths. Returns true if any row was merged.
-    @discardableResult
-    public func packRow(containing id: WinID) -> Bool {
-        guard var (r, _) = locate(id), rows[r].windows.count == 1 else { return false }
-        func share(_ w: WinID) -> CGFloat { min(weight(w), 1) }
-        var free = 1 - share(id)
-        var changed = false
-        while r + 1 < rows.count, rows[r + 1].windows.count == 1,
-              let c = rows[r + 1].windows.first, share(c) <= free + 0.02 {
-            free -= share(c)
-            rows[r].windows.append(c)
-            rows[r].height = max(rows[r].height, rows[r + 1].height)
-            rows.remove(at: r + 1)
-            changed = true
-        }
-        while r > 0, rows[r - 1].windows.count == 1,
-              let c = rows[r - 1].windows.first, share(c) <= free + 0.02 {
-            free -= share(c)
-            rows[r].windows.insert(c, at: 0)
-            rows[r].height = max(rows[r].height, rows[r - 1].height)
-            rows.remove(at: r - 1)
-            r -= 1
-            changed = true
-        }
-        return changed
+    /// Places a narrowed window alone in its row: `offset` is the space left of it as a
+    /// fraction of the row's width, kept within the row.
+    public func setLoneOffset(_ id: WinID, _ offset: CGFloat) {
+        let o = min(max(offset, 0), max(0, 1 - weight(id)))
+        widthOffsets[id] = o < 0.005 ? nil : o
+    }
+
+    /// The row's left edge and width for these layout parameters.
+    public static func rowExtent(_ p: LayoutParams) -> (x: CGFloat, width: CGFloat) {
+        let rowWidth = (p.viewport.width * min(max(p.widthRatio, 0.1), 1)).rounded()
+        return ((p.viewport.minX + (p.viewport.width - rowWidth) / 2).rounded(), rowWidth)
     }
 
     /// Equal widths for every window in the row of `id`.
@@ -446,8 +500,7 @@ public final class Strip {
     public func layout(_ p: LayoutParams, scroll: CGFloat, minHeights: [WinID: CGFloat] = [:]) -> [LayoutItem] {
         var out: [LayoutItem] = []
         out.reserveCapacity(rows.count)
-        let rowWidth = (p.viewport.width * min(max(p.widthRatio, 0.1), 1)).rounded()
-        let x0 = (p.viewport.minX + (p.viewport.width - rowWidth) / 2).rounded()
+        let (x0, rowWidth) = Strip.rowExtent(p)
         var y = p.viewport.minY - scroll
         for row in rows {
             let top = y.rounded()
@@ -460,29 +513,32 @@ public final class Strip {
             // A lone, narrowed window keeps its width; the rest of the row stays empty.
             let loneWidth = n == 1 && weights[0] < 1 ? (rowWidth * weights[0]).rounded() : nil
             var x = x0
+            if let lw = loneWidth, let o = widthOffsets[row.windows[0]] {
+                x = min(x0 + (rowWidth * o).rounded(), x0 + rowWidth - lw)
+            }
             for (i, id) in row.windows.enumerated() {
                 // The last panel takes what's left so rounding never leaves a gap.
                 let w = loneWidth ?? (i == n - 1 ? x0 + rowWidth - x : (available * weights[i] / total).rounded())
                 defer { x += w + p.gap }
-                let placement: Placement
-                if bottom <= p.hardTop + 1 || top >= p.hardBottom - 1 {
-                    placement = .park
-                } else if top < p.hardTop && p.topOverflow == .slide {
-                    placement = .overflow(CGRect(x: x, y: top, width: w, height: row.height))
-                } else if top < p.hardTop {
-                    let visible = bottom - p.hardTop
-                    let needed = max(p.minVisible, minHeights[id] ?? 0)
-                    if p.topOverflow == .shrink && visible >= needed {
-                        placement = .frame(CGRect(x: x, y: p.hardTop, width: w, height: visible))
-                    } else {
-                        placement = .park
-                    }
-                } else {
-                    placement = .frame(CGRect(x: x, y: top, width: w, height: row.height))
-                }
-                out.append(LayoutItem(id: id, placement: placement, rowHeight: row.height))
+                let frame = CGRect(x: x, y: top, width: w, height: bottom - top)
+                out.append(LayoutItem(id: id, placement: Strip.placement(frame, p, minHeight: minHeights[id]),
+                                      rowHeight: row.height, frame: frame))
             }
         }
         return out
+    }
+
+    /// How a window whose full frame is `r` is shown, given the screen edges.
+    public static func placement(_ r: CGRect, _ p: LayoutParams, minHeight: CGFloat? = nil) -> Placement {
+        if r.maxY <= p.hardTop + 1 || r.minY >= p.hardBottom - 1 { return .park }
+        if r.minY < p.hardTop || r.maxY > p.clipBottom + 1 {
+            if p.topOverflow == .slide { return .overflow(r) }
+            let top = max(r.minY, p.hardTop), visible = min(r.maxY, p.clipBottom) - top
+            if p.topOverflow == .shrink && visible >= max(p.minVisible, minHeight ?? 0) {
+                return .frame(CGRect(x: r.minX, y: top, width: r.width, height: visible))
+            }
+            return .park
+        }
+        return .frame(r)
     }
 }

@@ -13,6 +13,8 @@ private func CGSHWCaptureWindowList(_ cid: Int32, _ windows: UnsafeMutablePointe
 enum WindowCapture {
     private static let ignoreClipShape: UInt32 = 1 << 11
     private static let fullWindow: UInt32 = 1 << 15
+    /// One pixel per point instead of the Retina backing (a quarter of the pixels).
+    private static let nominalResolution: UInt32 = 1 << 9
 
     /// A window-server connection of our own for capturing. A capture holds its connection's
     /// lock for its whole duration; on the main connection that blocked the main thread's
@@ -27,10 +29,12 @@ enum WindowCapture {
         return Spaces.connection
     }()
 
-    /// ~16 ms; call it off the main thread.
-    static func image(_ id: CGWindowID) -> CGImage? {
+    /// ~16 ms at full resolution; call it off the main thread. `nominal`: at 1x, for the live
+    /// peek's frames, which are many and short-lived (stills stay sharp).
+    static func image(_ id: CGWindowID, nominal: Bool = false) -> CGImage? {
         var wid = id
-        return (CGSHWCaptureWindowList(connection, &wid, 1, ignoreClipShape | fullWindow) as? [CGImage])?.first
+        let options = ignoreClipShape | fullWindow | (nominal ? nominalResolution : 0)
+        return (CGSHWCaptureWindowList(connection, &wid, 1, options) as? [CGImage])?.first
     }
 }
 
@@ -69,12 +73,16 @@ final class SnapshotCache {
         CGRequestScreenCaptureAccess()
     }
 
-    /// Latest snapshot, but only if it was taken at this size (else it would be stretched).
+    /// Latest snapshot, but only if it shows the window at this size. A window taller than
+    /// asked (its app has a minimum height) still matches: the extra height is cropped.
     func image(_ id: CGWindowID, size: CGSize) -> CGImage? {
         guard let e = entries[id], abs(e.size.width - size.width) <= 3,
-              abs(e.size.height - size.height) <= 3 else { return nil }
+              e.size.height >= size.height - 3 else { return nil }
         return e.image
     }
+
+    /// Latest snapshot whatever size it was taken at.
+    func latestImage(_ id: CGWindowID) -> CGImage? { entries[id]?.image }
 
     /// The latest snapshot has the window's true on-screen colours.
     func isOnScreenCapture(_ id: CGWindowID) -> Bool { entries[id]?.onScreen ?? false }
@@ -106,10 +114,28 @@ final class SnapshotCache {
                     Log.debug("snapshot \(id) unusable")
                     return
                 }
-                self.entries[id] = Entry(image: image, size: size, time: CACurrentMediaTime(), onScreen: onScreen)
+                // Filed under the size the window really had, not the one asked for: an app slow
+                // to take a new size (or refusing it) was captured at its old one, and that
+                // picture, fitted to the new frame, came out shrunk with gaps around it.
+                let actual = SnapshotCache.pointSize(of: image, near: size)
+                if abs(actual.width - size.width) > 4 || abs(actual.height - size.height) > 4 {
+                    Log.debug("snapshot \(id) is \(Int(actual.width))x\(Int(actual.height)), not \(Int(size.width))x\(Int(size.height))")
+                }
+                self.entries[id] = Entry(image: image, size: actual, time: CACurrentMediaTime(), onScreen: onScreen)
                 self.onReady?(id)
             }
         }
+    }
+
+    /// The window size (points) a capture shows: its pixels over the backing scale, which is
+    /// the screens' common one, or else the whole number closest to pixels / expected points.
+    static func pointSize(of image: CGImage, near expected: CGSize) -> CGSize {
+        let scales = Set(NSScreen.screens.map(\.backingScaleFactor))
+        var scale = scales.count == 1 ? scales.first! : 0
+        if scale == 0 {
+            scale = expected.width > 0 ? max(1, (CGFloat(image.width) / expected.width).rounded()) : 2
+        }
+        return CGSize(width: (CGFloat(image.width) / scale).rounded(), height: (CGFloat(image.height) / scale).rounded())
     }
 
     /// 8x8 thumbnail bytes: cheap way to tell whether two frames differ.
@@ -149,6 +175,9 @@ final class LiveMirror {
     private let lock = NSLock()
     private var reference: [UInt8]?
     private var bias: [Int16]?
+    /// Frames since the colour shift was last measured, and whether a clear reading exists.
+    private var sinceMeasure = 0
+    private var measured = false
 
     /// True-colour snapshot of the window: every frame's colours are measured against it
     /// and corrected (see ColorShift) before delivery.
@@ -168,17 +197,22 @@ final class LiveMirror {
         let t = DispatchSource.makeTimerSource(queue: LiveMirror.queue)
         t.schedule(deadline: .now(), repeating: 1.0 / fps, leeway: .milliseconds(4))
         // Frames never pile up: the handler runs serially and skips ticks while busy.
+        let measureEvery = Int(fps * 2)
         t.setEventHandler { [weak self] in
-            guard var image = WindowCapture.image(id) else { return }
+            guard var image = WindowCapture.image(id, nominal: true) else { return }
             if let self {
                 self.lock.lock(); let ref = self.reference; self.lock.unlock()
-                // Re-measured every frame: the window parks a moment after streaming starts,
-                // and only a parked window loses its tint. Unclear readings (the content
-                // itself changed a lot) keep the previous correction.
-                if let ref, let grid = ColorShift.grid(image) {
+                // Measured until there is a clear reading (the window parks a moment after
+                // streaming starts, and only a parked window loses its tint), then every 2 s
+                // rather than every frame. Unclear readings (the content itself changed a
+                // lot) keep the previous correction. With wallpaper tinting off (Oz turns
+                // it off) there is usually no shift, and nothing is corrected at all.
+                self.sinceMeasure += 1
+                if let ref, !self.measured || self.sinceMeasure >= measureEvery, let grid = ColorShift.grid(image) {
+                    self.sinceMeasure = 0
                     switch ColorShift.measure(reference: ref, frame: grid) {
-                    case .shift(let s): self.bias = s
-                    case .none: self.bias = nil
+                    case .shift(let s): self.bias = s; self.measured = true
+                    case .none: self.bias = nil; self.measured = true
                     case .unclear: break
                     }
                 }
@@ -275,6 +309,14 @@ final class OverlayManager {
         var unchangedFrames = 0
         /// Row size the stand-in represents (the window may be taller if the app refused).
         var expectedSize = CGSize.zero
+        /// How much of the window is cut off at the bottom (scroll area above the screen bottom).
+        var bottomCut: CGFloat = 0
+        /// Drawn and clickable. A hidden overlay stays ordered in, transparent and click-through:
+        /// taking a window off screen (`orderOut`) and back is a window-server round trip that
+        /// stalled the main thread for up to half a second, many times per swipe.
+        var shown = false
+        /// The window it was last ordered just below (a window being dragged), if any.
+        var orderedBelow: CGWindowID?
         var fading = false
         /// Snapshot with true on-screen colours, to calibrate the live stream against.
         var reference: CGImage?
@@ -305,16 +347,28 @@ final class OverlayManager {
     private var overlays: [CGWindowID: Overlay] = [:]
     private var pendingHide: [CGWindowID: DispatchWorkItem] = [:]
 
-    /// Shows `image` as if the window were at `full` (AX coordinates), cut off above `clipTop`.
-    /// Also used as a stand-in for a whole window (a slow app's window while scrolling):
-    /// then `full` lies below `clipTop` and nothing is cut off.
-    func show(_ id: CGWindowID, image: CGImage, full: CGRect, clipTop: CGFloat, trueColor: Bool = false) {
+    /// Shows `image` as if the window were at `full` (AX coordinates), cut off above `clipTop`
+    /// and below `clipBottom`. Also used as a stand-in for a whole window (a slow app's window
+    /// while scrolling): then `full` lies between the two and nothing is cut off.
+    /// `stream`: keep it live (if live peeks are on); stand-ins during a scroll don't.
+    /// `shadow`: a whole window, drawn with a window shadow like the real one.
+    /// `below`: a window being dragged, which must stay on top of the stand-ins.
+    func show(_ id: CGWindowID, image: CGImage, full: CGRect, clipTop: CGFloat,
+              clipBottom: CGFloat = .greatestFiniteMagnitude, trueColor: Bool = false,
+              stream: Bool = true, shadow: Bool = false, below: CGWindowID? = nil) {
         if let o = overlays[id], o.fading {
+            // Shown again while fading out: replace the running fade, or it would carry on to
+            // zero and leave the stand-in invisible over a parked window (the window "vanished").
             o.fading = false
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0
+                o.window.animator().alphaValue = 1
+            }
             o.window.alphaValue = 1
         }
         let top = max(clipTop, full.minY)
-        let visibleHeight = full.maxY - top
+        let bottom = min(clipBottom, full.maxY)
+        let visibleHeight = bottom - top
         guard visibleHeight > 0 else { return hide(id) }
         pendingHide.removeValue(forKey: id)?.cancel()
         let o: Overlay
@@ -325,12 +379,13 @@ final class OverlayManager {
             (o.window.contentView as? PeekView)?.onClick = { [weak self] in self?.onClick?(id) }
             overlays[id] = o
         }
-        let nsY = Geometry.primaryHeight - full.maxY
+        let nsY = Geometry.primaryHeight - bottom
         let frame = NSRect(x: full.minX, y: nsY, width: full.width, height: visibleHeight)
 
         o.expectedSize = full.size
+        o.bottomCut = full.maxY - bottom
         if trueColor && o.reference == nil { o.reference = image }
-        if live && o.mirror == nil && !o.mirrorIdle { startMirror(o, id: id) }
+        if live && stream && o.mirror == nil && !o.mirrorIdle { startMirror(o, id: id) }
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -344,7 +399,23 @@ final class OverlayManager {
 
         // Layer-backed content: no need to force a synchronous redraw every frame.
         o.window.setFrame(frame, display: false)
-        if !o.window.isVisible { o.window.orderFrontRegardless() }
+        if o.window.hasShadow != shadow { o.window.hasShadow = shadow }
+        if !o.shown {
+            o.shown = true
+            o.window.alphaValue = 1
+            o.window.ignoresMouseEvents = false
+            // Over the windows that came forward while it was hidden, but under a dragged one.
+            if let below {
+                o.window.order(.below, relativeTo: Int(below))
+            } else {
+                o.window.orderFrontRegardless()
+            }
+            o.orderedBelow = below
+        } else if let below, o.orderedBelow != below {
+            // Already showing when a drag started: tuck it under the dragged window once.
+            o.window.order(.below, relativeTo: Int(below))
+            o.orderedBelow = below
+        }
     }
 
     /// Streams the window into the overlay. After ~2 s of identical frames (nothing
@@ -355,7 +426,7 @@ final class OverlayManager {
         let idleLimit = Int(liveFPS * 2)
         mirror.setReference(o.reference)
         mirror.onFrame = { [weak o] image, signature in
-            guard let o, o.window.isVisible else { return }
+            guard let o, o.shown else { return }
             if signature == o.lastSignature {
                 o.unchangedFrames += 1
                 if o.unchangedFrames >= idleLimit {
@@ -384,10 +455,16 @@ final class OverlayManager {
     /// aspect ratio. A window the app keeps taller than its row (minimum size) then just
     /// runs past the row's bottom, exactly like the real window would, instead of being squashed.
     /// AppKit views are bottom-up and clip: only the part inside the overlay shows.
+    /// Fills the window's frame with the picture, top-left aligned, cropping what sticks out:
+    /// a picture of the right size fits exactly; one taken at another size (a stale stand-in,
+    /// a window taller than asked) is cropped rather than shrunk, so there are never gaps
+    /// around it or tiny text.
     private static func layoutImage(_ o: Overlay, in row: CGSize) {
-        guard let image = o.image, image.width > 0 else { return }
-        let height = (row.width * CGFloat(image.height) / CGFloat(image.width)).rounded()
-        o.imageLayer.frame = CGRect(x: 0, y: row.height - height, width: row.width, height: height)
+        guard let image = o.image, image.width > 0, image.height > 0 else { return }
+        let iw = CGFloat(image.width), ih = CGFloat(image.height)
+        let scale = max(row.width / iw, row.height / ih)
+        let w = (iw * scale).rounded(), h = (ih * scale).rounded()
+        o.imageLayer.frame = CGRect(x: 0, y: row.height - h - o.bottomCut, width: w, height: h)
     }
 
     /// Stops every live stream but keeps the stand-ins (with their last frame) in place, e.g.
@@ -401,9 +478,24 @@ final class OverlayManager {
         }
     }
 
+    /// Turns live peeks on or off for the overlays already showing too. Off: each keeps the
+    /// picture it has and nothing is captured any more (no recording indicator).
+    func setLive(_ on: Bool) {
+        live = on
+        if on {
+            for (id, o) in overlays where o.shown && o.mirror == nil {
+                o.mirrorIdle = false
+                o.unchangedFrames = 0
+                startMirror(o, id: id)
+            }
+        } else {
+            pauseMirrors()
+        }
+    }
+
     /// Restart idle live mirrors (the user is interacting again).
     func wake() {
-        for (id, o) in overlays where o.mirrorIdle && o.window.isVisible {
+        for (id, o) in overlays where o.mirrorIdle && o.shown {
             o.mirrorIdle = false
             o.unchangedFrames = 0
                 if live { startMirror(o, id: id) }
@@ -413,8 +505,9 @@ final class OverlayManager {
     /// The real window is coming back at `frame`: keep the stand-in on top of it, unclipped,
     /// for a moment so there is no blank frame while the window server catches up.
     func handoff(_ id: CGWindowID, to frame: CGRect, delay: TimeInterval = 0.12) {
-        guard let o = overlays[id], o.window.isVisible else { return }
+        guard let o = overlays[id], o.shown else { return }
         o.expectedSize = frame.size
+        o.bottomCut = 0
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         OverlayManager.layoutImage(o, in: frame.size)
@@ -432,7 +525,7 @@ final class OverlayManager {
     /// hard cut would show a small colour jump.
     func fadeOut(_ id: CGWindowID, duration: TimeInterval = 0.18) {
         pendingHide.removeValue(forKey: id)?.cancel()
-        guard let o = overlays[id], o.window.isVisible else { return }
+        guard let o = overlays[id], o.shown else { return }
         stopLive(o)
         o.fading = true
         NSAnimationContext.runAnimationGroup({ ctx in
@@ -441,8 +534,8 @@ final class OverlayManager {
         }, completionHandler: {
             guard o.fading else { return }  // shown again meanwhile
             o.fading = false
-            o.window.orderOut(nil)
-            o.window.alphaValue = 1
+            o.shown = false
+            o.window.ignoresMouseEvents = true
         })
     }
 
@@ -451,11 +544,16 @@ final class OverlayManager {
 
     func hide(_ id: CGWindowID) {
         pendingHide.removeValue(forKey: id)?.cancel()
-        guard let o = overlays[id] else { return }
+        guard let o = overlays[id], o.shown || o.fading else { return }
         o.fading = false
-        o.window.alphaValue = 1
+        o.shown = false
         stopLive(o)
-        o.window.orderOut(nil)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0
+            o.window.animator().alphaValue = 0
+        }
+        o.window.alphaValue = 0
+        o.window.ignoresMouseEvents = true
     }
 
     private func stopLive(_ o: Overlay) {
@@ -470,7 +568,7 @@ final class OverlayManager {
     }
 
     func isShowing(_ id: CGWindowID) -> Bool {
-        overlays[id]?.window.isVisible ?? false
+        overlays[id]?.shown ?? false
     }
 
     func remove(_ id: CGWindowID) {
@@ -479,7 +577,12 @@ final class OverlayManager {
         o.window.orderOut(nil)
     }
 
+    /// Hides every overlay and really takes them off screen: before Mission Control (it would
+    /// show the transparent ones) and on quit.
     func hideAll() {
-        overlays.keys.forEach(hide)
+        for (id, o) in overlays {
+            hide(id)
+            o.window.orderOut(nil)
+        }
     }
 }

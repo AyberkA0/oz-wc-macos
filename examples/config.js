@@ -22,8 +22,9 @@ oz.set({
 
   topOverflow: "slide",          // window leaving the top edge: "slide" | "shrink" | "hide"
   livePeek: true,                // the half-visible window at the top stays live (video keeps playing)
-  livePeekFPS: 24,               // frame rate of the live peek
+  livePeekFPS: 12,               // frame rate of the live peek
   slowAppProxy: true,            // windows of slow apps are moved as images while scrolling
+  smoothScroll: true,            // all windows move as images while scrolling (smoothest; content pauses)
   slowAppThreshold: 30,          // ms; an app slower than this to move a window counts as slow
   minVisible: 80,
 
@@ -109,6 +110,7 @@ bind(S + "+s", function () {       // main + side: this panel 2/3, the rest shar
 bind(M + "+r", "cycleHeight");     // 1/3 → 1/2 → 2/3 → full
 bind(S + "+r", "cycleHeightBack");
 bind(M + "+f", "toggleFullHeight");
+bind(S + "+f", "toggleMaximize");  // fill the screen / back into the strip (also: double click the title bar)
 bind(S + "+" + K.wider, "resizeHeight");                             // taller
 bind(S + "+" + K.narrower, function () { oz.resizeHeight(-0.05); }); // shorter
 
@@ -131,7 +133,9 @@ bind(M + "+return", function () {     // new Terminal window (opens below the fo
 // ── System ──
 bind(M + "+m", "missionControl");
 bind(S + "+m", "appExpose");
-bind(S + "+t", "toggleTiling");
+bind(S + "+t", "toggleTiling");          // everywhere
+bind(S + "+escape", "toggleSpaceTiling"); // just this desktop (floating desktop), remembered
+bind(S + "+a", "editScrollArea");      // set the part of the screen this desktop scrolls in
 bind(S + "+c", "reloadConfig");
 
 // Shortcut cheat sheet (⌃⌥ + K.help)
@@ -139,7 +143,8 @@ oz.bind(M + "+" + K.help, function () {
   oz.notify("Oz shortcuts (⌃⌥)",
     "hjkl/arrows focus · ⇧ moves · " + K.joinUp + " " + K.joinDown + " join row · i/o pull in/out · " +
     "w width · " + K.narrower + " " + K.wider + " narrower/wider · " + K.equalize + " equalize · " +
-    "r height · f full · c center · u/d scroll · 1-9 row · esc float");
+    "r height · f full · c center · u/d scroll · 1-9 row · esc float · " +
+    "⇧f fill screen · ⇧esc desktop tiling · ⇧a scroll area");
 });
 
 // ───────────────────────────────────── Rules ─────────────────────────────────────

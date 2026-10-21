@@ -47,6 +47,47 @@ final class StripTests: XCTestCase {
         XCTAssertEqual(f[1], .park)
     }
 
+    func testScrollAreaCutsOffAtItsBottom() {
+        // Right half of the screen, ending at y=700 (above the screen bottom).
+        var p = LayoutParams(viewport: CGRect(x: 510, y: 50, width: 500, height: 640),
+                             hardTop: 40, hardBottom: 700, gap: 10, topOverflow: .slide, minVisible: 80, cutBottom: true)
+        let s = makeStrip([315, 315, 315])
+        var f = Dictionary(uniqueKeysWithValues: s.layout(p, scroll: 0).map { ($0.id, $0.placement) })
+        XCTAssertEqual(f[1], .frame(CGRect(x: 510, y: 50, width: 500, height: 315)))
+        XCTAssertEqual(f[2], .frame(CGRect(x: 510, y: 375, width: 500, height: 315)))
+        // Starts at 700 = the area's bottom: out of view.
+        XCTAssertEqual(f[3], .park)
+        // Scrolled half a row: the second row crosses the bottom edge and is drawn cut off.
+        f = Dictionary(uniqueKeysWithValues: s.layout(p, scroll: -100).map { ($0.id, $0.placement) })
+        XCTAssertEqual(f[2], .overflow(CGRect(x: 510, y: 475, width: 500, height: 315)))
+        // Shrink mode keeps only the part inside the area.
+        p.topOverflow = .shrink
+        f = Dictionary(uniqueKeysWithValues: s.layout(p, scroll: -100).map { ($0.id, $0.placement) })
+        XCTAssertEqual(f[2], .frame(CGRect(x: 510, y: 475, width: 500, height: 225)))
+        // Without cutBottom (area reaching the screen bottom) windows run off as before.
+        p.cutBottom = false
+        p.hardBottom = 1100
+        f = Dictionary(uniqueKeysWithValues: s.layout(p, scroll: -100).map { ($0.id, $0.placement) })
+        XCTAssertEqual(f[2], .frame(CGRect(x: 510, y: 475, width: 500, height: 315)))
+    }
+
+    func testDroppingBetweenRowsAndBesideAWindow() {
+        let s = makeStrip([300, 300, 300])   // rows: [1] [2] [3]
+        // Window 3 dragged above row 2.
+        s.remove(3)
+        s.insertRow(3, height: 300, before: 2)
+        XCTAssertEqual(s.rows.map(\.windows), [[1], [3], [2]])
+        // Window 1 dropped on the right of window 2: they share a row.
+        s.remove(1)
+        XCTAssertTrue(s.insertBeside(1, anchor: 2, right: true))
+        XCTAssertEqual(s.rows.map(\.windows), [[3], [2, 1]])
+        // ...and to the end of the strip.
+        s.remove(3)
+        s.insertRow(3, height: 300, before: nil)
+        XCTAssertEqual(s.rows.map(\.windows), [[2, 1], [3]])
+        XCTAssertFalse(s.insertBeside(4, anchor: 99, right: false))
+    }
+
     func testSlideModeReportsOverflow() {
         var p = params
         p.topOverflow = .slide
@@ -86,36 +127,58 @@ final class StripTests: XCTestCase {
         XCTAssertFalse(s.setWidthFraction(3, 0.5))
     }
 
-    func testNarrowLoneWindowLeavesSpaceOrPacks() {
-        let s = makeStrip([400, 300, 300, 300])
-        // Narrowed alone, nothing fits beside it: half width, rest empty.
+    func testNarrowLoneWindowLeavesSpace() {
+        let s = makeStrip([400, 300])
+        // Narrowed alone: half width, the rest of the row stays empty, even with a narrow
+        // window in the next row that would fit there.
         s.setLoneWidth(1, 0.5)
-        XCTAssertFalse(s.packRow(containing: 1))
+        s.setLoneWidth(2, 0.3)
+        XCTAssertEqual(s.rows.map(\.windows), [[1], [2]])
         XCTAssertEqual(frames(s, scroll: 0)[1], .frame(CGRect(x: 10, y: 50, width: 500, height: 400)))
-        // Window 3 is narrowed too, but 2 (full width) sits between them: still not adjacent.
-        s.setLoneWidth(3, 0.3)
-        XCTAssertFalse(s.packRow(containing: 1))
-        // Narrow 2 to 0.2: it fits beside 1 (0.5 free), and then 3 (0.3) fits as well.
-        s.setLoneWidth(2, 0.2)
-        XCTAssertTrue(s.packRow(containing: 1))
-        XCTAssertEqual(s.rows.map(\.windows), [[1, 2, 3], [4]])
-        XCTAssertEqual(s.rows[0].height, 400)
-        // They fill the row in proportion 0.5 : 0.2 : 0.3 (980 pt after two gaps).
-        let f = frames(s, scroll: 0)
-        XCTAssertEqual(f[1], .frame(CGRect(x: 10, y: 50, width: 490, height: 400)))
-        XCTAssertEqual(f[2], .frame(CGRect(x: 510, y: 50, width: 196, height: 400)))
-        XCTAssertEqual(f[3], .frame(CGRect(x: 716, y: 50, width: 294, height: 400)))
-        // A full-width window never gets pulled in.
-        s.setLoneWidth(4, nil)
-        XCTAssertFalse(s.packRow(containing: 4))
+        // Back to full width.
+        s.setLoneWidth(1, nil)
+        XCTAssertEqual(frames(s, scroll: 0)[1], .frame(CGRect(x: 10, y: 50, width: 1000, height: 400)))
     }
 
-    func testPackTakesRowAboveToo() {
-        let s = makeStrip([300, 300])
+    func testNarrowLoneWindowKeepsItsPlace() {
+        let s = makeStrip([400])
+        // Narrowed from its left edge: it sits on the right of the row.
         s.setLoneWidth(1, 0.4)
-        s.setLoneWidth(2, 0.6)
-        XCTAssertTrue(s.packRow(containing: 2))
-        XCTAssertEqual(s.rows.map(\.windows), [[1, 2]])
+        s.setLoneOffset(1, 0.6)
+        XCTAssertEqual(frames(s, scroll: 0)[1], .frame(CGRect(x: 610, y: 50, width: 400, height: 400)))
+        // Wider again: it stays where it is as far as it fits, then moves left.
+        s.setLoneWidth(1, 0.5)
+        XCTAssertEqual(frames(s, scroll: 0)[1], .frame(CGRect(x: 510, y: 50, width: 500, height: 400)))
+        // In the middle.
+        s.setLoneOffset(1, 0.25)
+        XCTAssertEqual(frames(s, scroll: 0)[1], .frame(CGRect(x: 260, y: 50, width: 500, height: 400)))
+        // Full width forgets the place.
+        s.setLoneWidth(1, nil)
+        XCTAssertNil(s.widthOffsets[1])
+        XCTAssertEqual(frames(s, scroll: 0)[1], .frame(CGRect(x: 10, y: 50, width: 1000, height: 400)))
+    }
+
+    func testMovingIntoARowWithRoom() {
+        let s = makeStrip([400, 300, 300])          // rows: [1] [2] [3]
+        s.setLoneWidth(1, 0.5)                      // 1 takes the left half of its row
+        s.setLoneWidth(3, 0.4)
+        // 3 (0.4) moves up past 2, which is full width: no room there.
+        XCTAssertFalse(s.joinIfFits(3, by: -1))
+        s.moveVertical(3, by: -1)                   // [1] [3] [2]
+        // Now the row above holds 1 with half the row free: 3 joins it, on the right.
+        s.setLoneOffset(3, 0.6)
+        XCTAssertTrue(s.joinIfFits(3, by: -1))
+        XCTAssertEqual(s.rows.map(\.windows), [[1, 3], [2]])
+        // They share the row 0.5 : 0.4 (990 pt after the gap).
+        let f = frames(s, scroll: 0)
+        XCTAssertEqual(f[1], .frame(CGRect(x: 10, y: 50, width: 550, height: 400)))
+        XCTAssertEqual(f[3], .frame(CGRect(x: 570, y: 50, width: 440, height: 400)))
+        // Moving on up leaves the row again (into a row of its own above it).
+        XCTAssertFalse(s.joinIfFits(3, by: -1))
+        s.moveVertical(3, by: -1)
+        XCTAssertEqual(s.rows.map(\.windows), [[3], [1], [2]])
+        // A full-width window never fits anywhere.
+        XCTAssertFalse(s.joinIfFits(2, by: -1))
     }
 
     func testJoinRows() {

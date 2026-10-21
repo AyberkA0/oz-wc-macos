@@ -2,22 +2,63 @@ import Cocoa
 
 enum SystemActions {
     // Launching the "Mission Control" helper binary stopped triggering the overlay on
-    // recent macOS (confirmed broken on macOS 27). Instead we synthesize the default
-    // keyboard shortcuts, which the window server still honours.
-    //   Mission Control: F3 (the Mission Control media key) — same key the user presses.
+    // recent macOS (confirmed broken on macOS 27), and a synthesized F3 (kVK_F3) is not the
+    // Mission Control media key either, so it does nothing. The Dock still listens to its
+    // own private notifications (what the trackpad gestures send); keyboard shortcuts are
+    // only the fallback when that symbol is missing.
+    //   Mission Control: Control+Up Arrow.
     //   App Exposé:      Control+Down Arrow.
-    //   Show Desktop:    F11 (the Show Desktop media key).
+    //   Show Desktop:    F11.
     private enum Key {
-        static let f3: CGKeyCode = 0x63
         static let f11: CGKeyCode = 0x67
+        static let upArrow: CGKeyCode = 0x7E
         static let downArrow: CGKeyCode = 0x7D
     }
 
-    /// Same as pressing F3 / the old three-finger swipe up.
-    static func missionControl() { postKey(Key.f3) }
+    private typealias DockNotify = @convention(c) (CFString, Int32) -> Void
+    private static let coreDockSendNotification: DockNotify? = {
+        let path = "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices"
+        guard let handle = dlopen(path, RTLD_LAZY), let sym = dlsym(handle, "CoreDockSendNotification") else {
+            Log.info("CoreDockSendNotification not found; using keyboard shortcuts")
+            return nil
+        }
+        return unsafeBitCast(sym, to: DockNotify.self)
+    }()
+
+    /// Asks the Dock directly; false if the private API isn't available.
+    private static func dock(_ name: String) -> Bool {
+        guard let send = coreDockSendNotification else { return false }
+        send(name as CFString, 0)
+        return true
+    }
+
+    /// Same as the old three-finger swipe up / the Mission Control key.
+    static func missionControl() {
+        if !dock("com.apple.expose.awake") { postKey(Key.upArrow, flags: [.maskControl, .maskSecondaryFn, .maskNumericPad]) }
+    }
     /// Windows of the current app (old three-finger swipe down).
-    static func appExpose() { postKey(Key.downArrow, flags: .maskControl) }
-    static func showDesktop() { postKey(Key.f11) }
+    static func appExpose() {
+        if !dock("com.apple.expose.front.awake") { postKey(Key.downArrow, flags: [.maskControl, .maskSecondaryFn, .maskNumericPad]) }
+    }
+    /// Mission Control / App Exposé are up: the Dock then covers a whole screen with its
+    /// overview window (its Dock bar never does).
+    static var isOverviewShowing: Bool {
+        guard let list = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] else {
+            return false
+        }
+        let screens = NSScreen.screens.map { Geometry.ax($0.frame) }
+        return list.contains { w in
+            guard w[kCGWindowOwnerName as String] as? String == "Dock", (w[kCGWindowLayer as String] as? Int) == 20,
+                  let b = w[kCGWindowBounds as String] else { return false }
+            var r = CGRect.zero
+            CGRectMakeWithDictionaryRepresentation(b as! CFDictionary, &r)
+            return screens.contains { r.width >= $0.width - 1 && r.height >= $0.height - 1 }
+        }
+    }
+
+    static func showDesktop() {
+        if !dock("com.apple.showdesktop.awake") { postKey(Key.f11) }
+    }
 
     /// Sends a key press to the window server (no Accessibility/Input Monitoring needed
     /// beyond Oz's existing grant; it drives the same symbolic hotkeys as the keyboard).

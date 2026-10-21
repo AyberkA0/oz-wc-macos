@@ -52,10 +52,14 @@ public struct Settings {
     /// Peeking (top-overflowing) windows stream live content (video keeps playing).
     public var livePeek = true
     /// Frame rate of the live peek.
-    public var livePeekFPS = 24.0
+    public var livePeekFPS = 12.0
     /// While scrolling, draw windows of apps that are slow to move (see slowAppThreshold)
     /// from a snapshot and move the real window once, when the scroll ends.
     public var slowAppProxy = true
+    /// While the strip moves (swipes, animations), draw every window from a snapshot and move
+    /// the real windows once, when the motion ends: smooth however slowly apps answer, at the
+    /// cost of content standing still during the motion.
+    public var smoothScroll = true
     /// An app is "slow" when it takes longer than this (ms, averaged) to apply a move.
     public var slowAppThreshold = 30.0
     public var swipe = SwipeSettings()
@@ -92,6 +96,7 @@ public struct Settings {
         if let v = j["livePeek"] as? Bool { livePeek = v }
         if let v = num(j["livePeekFPS"]), v > 0 { livePeekFPS = min(v, 60) }
         if let v = j["slowAppProxy"] as? Bool { slowAppProxy = v }
+        if let v = j["smoothScroll"] as? Bool { smoothScroll = v }
         if let v = num(j["slowAppThreshold"]), v > 0 { slowAppThreshold = v }
         if let v = j["debug"] as? Bool { debug = v }
 

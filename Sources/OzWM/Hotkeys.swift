@@ -42,6 +42,18 @@ final class HotkeyCenter {
         return true
     }
 
+    /// Registers a hotkey for a short while (e.g. Esc while an editor is up); call the
+    /// returned closure to remove it. Survives nothing: `unregisterAll` drops it too.
+    func registerTemporary(_ combo: String, action: @escaping () -> Void) -> (() -> Void)? {
+        let id = nextID
+        guard register(combo, action: action), let ref = refs.last else { return nil }
+        return { [weak self] in
+            guard let self, self.actions.removeValue(forKey: id) != nil else { return }
+            UnregisterEventHotKey(ref)
+            self.refs.removeAll { $0 == ref }
+        }
+    }
+
     func unregisterAll() {
         refs.forEach { UnregisterEventHotKey($0) }
         refs = []

@@ -30,11 +30,21 @@ enum Watchdog {
                     }
                 } else if stallStart != 0 {
                     let ms = Int((beat - stallStart) * 1000) + 20
-                    Log.info("[stall] main thread blocked \(ms) ms in:\n    " + stack.joined(separator: "\n    "))
+                    if !isIdle(stack) {
+                        Log.info("[stall] main thread blocked \(ms) ms in:\n    " + stack.joined(separator: "\n    "))
+                    }
                     stallStart = 0
                 }
             }
         }
+    }
+
+    /// The main thread was asleep in its run loop, waiting for work, with none of our code on
+    /// the stack: a late heartbeat (timers are held back while the Mac idles, sleeps or sits
+    /// at the lock screen), not a hitch. These made up most "stalls" in the log.
+    private static func isIdle(_ stack: [String]) -> Bool {
+        guard let top = stack.first, top.contains("mach_msg") else { return false }
+        return !stack.contains { $0.hasPrefix("OzWM") && !$0.hasSuffix(" main") }
     }
 
     /// Our own frames (plus the system call they are waiting in) from the main thread.

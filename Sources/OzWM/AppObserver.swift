@@ -8,13 +8,15 @@ private func axObserverCallback(_ observer: AXObserver, _ element: AXUIElement,
     o.handler?(notification as String, element, o.pid)
 }
 
-/// Accessibility notifications for one application.
+/// Accessibility notifications for one application. Notifications arrive on the main run
+/// loop; registering for them is a round trip to the app (a launching app took up to
+/// 0.9 s), so that runs on `schedule`, the app's own background queue.
 final class AppObserver {
     let pid: pid_t
     let app: AXUIElement
     var handler: ((String, AXUIElement, pid_t) -> Void)?
     private var observer: AXObserver?
-    private var appRegistered = false
+    private let schedule: (@escaping () -> Void) -> Void
 
     static let appNotifications = [
         kAXWindowCreatedNotification,
@@ -30,14 +32,16 @@ final class AppObserver {
         kAXWindowResizedNotification,
     ]
 
-    init?(pid: pid_t) {
+    /// `schedule` runs work off the main thread, in order with the app's other AX calls.
+    init?(pid: pid_t, schedule: @escaping (@escaping () -> Void) -> Void) {
         self.pid = pid
+        self.schedule = schedule
         app = AXUIElementCreateApplication(pid)
         var obs: AXObserver?
         guard AXObserverCreate(pid, axObserverCallback, &obs) == .success, let obs else { return nil }
         observer = obs
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .defaultMode)
-        registerApp(attempt: 0)
+        schedule { [weak self] in self?.registerApp(attempt: 0) }
     }
 
     deinit {
@@ -49,6 +53,7 @@ final class AppObserver {
     private var refcon: UnsafeMutableRawPointer { Unmanaged.passUnretained(self).toOpaque() }
 
     /// Freshly launched apps often reject registration for a moment; retry a few times.
+    /// Runs on the scheduled (background) queue.
     private func registerApp(attempt: Int) {
         guard let observer else { return }
         var ok = true
@@ -56,18 +61,21 @@ final class AppObserver {
             let err = AXObserverAddNotification(observer, app, n as CFString, refcon)
             if err != .success && err != .notificationAlreadyRegistered { ok = false }
         }
-        appRegistered = ok
         if !ok && attempt < 10 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-                self?.registerApp(attempt: attempt + 1)
+                guard let self else { return }
+                self.schedule { [weak self] in self?.registerApp(attempt: attempt + 1) }
             }
         }
     }
 
     func watch(window: AXUIElement) {
         guard let observer else { return }
-        for n in AppObserver.windowNotifications {
-            AXObserverAddNotification(observer, window, n as CFString, refcon)
+        let refcon = self.refcon
+        schedule {
+            for n in AppObserver.windowNotifications {
+                AXObserverAddNotification(observer, window, n as CFString, refcon)
+            }
         }
     }
 }

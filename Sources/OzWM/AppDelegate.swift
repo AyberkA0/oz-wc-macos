@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// main-thread work throttled by hundreds of milliseconds (measured), which showed up
     /// as random hitches in swipes and animations.
     private var activity: NSObjectProtocol?
+    private var areaEditor: ScrollAreaEditor?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
@@ -62,8 +63,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         wm.rulesProvider = { [unowned self] w in config.rules(for: w) }
         wm.emit = { [unowned self] event, payload in config.emit(event, payload) }
         wm.reloadConfig = { [unowned self] in config.load() }
-        wm.onEnabledChanged = { [weak self] _ in self?.statusItem.button?.appearsDisabled = !(self?.wm.enabled ?? true) }
+        wm.onEnabledChanged = { [weak self] _ in self?.updateStatusIcon() }
+        wm.editScrollArea = { [weak self] screen in self?.openScrollAreaEditor(screen) }
         config.onLoaded = { [unowned self] s in
+            var s = s
+            // The menu's choice wins over the config file's `livePeek`.
+            if let live = UserDefaults.standard.object(forKey: "livePeek") as? Bool { s.livePeek = live }
+            if let smooth = UserDefaults.standard.object(forKey: "smoothScroll") as? Bool { s.smoothScroll = smooth }
             wm.settings = s
             Log.debugEnabled = s.debug
             gestures.configure(s)
@@ -233,6 +239,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             menu.addItem(.separator())
             item("Tiling Enabled", #selector(toggleTiling)).state = wm.enabled ? .on : .off
+            if wm.enabled, let screen = Geometry.screenUnderMouse() {
+                item("Tile This Desktop", #selector(toggleSpaceTiling)).state = wm.isTiled(screen: screen) ? .on : .off
+                if wm.isTiled(screen: screen) {
+                    item("Set Scroll Area…", #selector(setScrollArea))
+                    if wm.scrollAreaFraction(screen) != nil {
+                        item("Reset Scroll Area", #selector(resetScrollArea))
+                    }
+                }
+            }
+            item("Keep Windows Alive (Live Capture)", #selector(toggleLivePeek)).state = wm.settings.livePeek ? .on : .off
+            item("Smooth Scrolling (Snapshots While Moving)", #selector(toggleSmoothScroll)).state = wm.settings.smoothScroll ? .on : .off
             item("Retile", #selector(retile))
         }
         menu.addItem(.separator())
@@ -251,6 +268,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggleTiling() { wm.setEnabled(!wm.enabled) }
+    @objc private func toggleSpaceTiling() { wm.perform("toggleSpaceTiling") }
+
+    /// On: windows peeking over an edge are captured continuously (video keeps playing).
+    /// Off: one picture when a window starts to peek, shown as is.
+    @objc private func toggleLivePeek() {
+        let on = !wm.settings.livePeek
+        UserDefaults.standard.set(on, forKey: "livePeek")
+        wm.setLivePeek(on)
+    }
+
+    /// On: while the strip moves every window is a snapshot, the real ones move once at the end.
+    @objc private func toggleSmoothScroll() {
+        let on = !wm.settings.smoothScroll
+        UserDefaults.standard.set(on, forKey: "smoothScroll")
+        wm.setSmoothScroll(on)
+    }
+
+    @objc private func setScrollArea() {
+        guard let screen = Geometry.screenUnderMouse() else { return }
+        openScrollAreaEditor(screen)
+    }
+
+    @objc private func resetScrollArea() {
+        guard let screen = Geometry.screenUnderMouse() else { return }
+        wm.setScrollArea(nil, screen: screen)
+    }
+
+    /// The editor covers the screen; the area is saved for the desktop shown there.
+    private func openScrollAreaEditor(_ screen: NSScreen) {
+        guard areaEditor == nil else { return }
+        let editor = ScrollAreaEditor(screen: screen, fraction: wm.scrollAreaFraction(screen)) { [weak self] area in
+            self?.wm.setScrollArea(area, screen: screen)
+        }
+        areaEditor = editor
+        editor.onClose = { [weak self] in self?.areaEditor = nil }
+        editor.show()
+    }
+
+    /// Dimmed while Oz doesn't tile what's on screen (off, or off for this desktop).
+    private func updateStatusIcon() {
+        let tiled = wm.enabled && (Geometry.screenUnderMouse().map(wm.isTiled) ?? true)
+        statusItem.button?.appearsDisabled = !tiled
+    }
     @objc private func retile() { wm.perform("retile") }
     @objc private func reloadConfig() { config.load() }
 
