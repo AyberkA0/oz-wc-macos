@@ -5,10 +5,19 @@ import Foundation
 final class HotkeyCenter {
     static let shared = HotkeyCenter()
 
-    private var refs: [EventHotKeyRef] = []
+    private struct Entry {
+        let code: UInt32
+        let mods: UInt32
+        var ref: EventHotKeyRef?
+    }
+
+    private var entries: [UInt32: Entry] = [:]
     private var actions: [UInt32: () -> Void] = [:]
     private var nextID: UInt32 = 1
     private var installed = false
+    /// While suspended no combo is grabbed, so every key reaches the frontmost app
+    /// (remote desktops and streaming clients that have shortcuts of their own).
+    private(set) var suspended = false
 
     private func installHandler() {
         guard !installed else { return }
@@ -25,39 +34,68 @@ final class HotkeyCenter {
     }
 
     private func fire(_ id: UInt32) {
+        guard !suspended else { return }
         actions[id]?()
     }
 
-    func register(_ combo: String, action: @escaping () -> Void) -> Bool {
-        installHandler()
-        guard let (code, mods) = HotkeyCenter.parse(combo) else { return false }
-        let id = nextID
-        nextID += 1
+    private func grab(_ id: UInt32, code: UInt32, mods: UInt32) -> EventHotKeyRef? {
         var ref: EventHotKeyRef?
         let hkID = EventHotKeyID(signature: OSType(0x4F5A_5743), id: id) // 'OZWC'
         let status = RegisterEventHotKey(code, mods, hkID, GetApplicationEventTarget(), 0, &ref)
-        guard status == noErr, let ref else { return false }
-        refs.append(ref)
+        return status == noErr ? ref : nil
+    }
+
+    @discardableResult
+    private func add(_ combo: String, action: @escaping () -> Void) -> UInt32? {
+        installHandler()
+        guard let (code, mods) = HotkeyCenter.parse(combo) else { return nil }
+        let id = nextID
+        nextID += 1
+        var entry = Entry(code: code, mods: mods, ref: nil)
+        if !suspended {
+            guard let ref = grab(id, code: code, mods: mods) else { return nil }
+            entry.ref = ref
+        }
+        entries[id] = entry
         actions[id] = action
-        return true
+        return id
+    }
+
+    func register(_ combo: String, action: @escaping () -> Void) -> Bool {
+        add(combo, action: action) != nil
     }
 
     /// Registers a hotkey for a short while (e.g. Esc while an editor is up); call the
     /// returned closure to remove it. Survives nothing: `unregisterAll` drops it too.
     func registerTemporary(_ combo: String, action: @escaping () -> Void) -> (() -> Void)? {
-        let id = nextID
-        guard register(combo, action: action), let ref = refs.last else { return nil }
+        guard let id = add(combo, action: action) else { return nil }
         return { [weak self] in
-            guard let self, self.actions.removeValue(forKey: id) != nil else { return }
-            UnregisterEventHotKey(ref)
-            self.refs.removeAll { $0 == ref }
+            guard let self, let entry = self.entries.removeValue(forKey: id) else { return }
+            self.actions[id] = nil
+            if let ref = entry.ref { UnregisterEventHotKey(ref) }
         }
     }
 
     func unregisterAll() {
-        refs.forEach { UnregisterEventHotKey($0) }
-        refs = []
+        entries.values.forEach { if let ref = $0.ref { UnregisterEventHotKey(ref) } }
+        entries = [:]
         actions = [:]
+    }
+
+    /// Lets go of every combo (they stay known) until `resume`.
+    func suspend() {
+        guard !suspended else { return }
+        suspended = true
+        for (id, e) in entries {
+            if let ref = e.ref { UnregisterEventHotKey(ref) }
+            entries[id]?.ref = nil
+        }
+    }
+
+    func resume() {
+        guard suspended else { return }
+        suspended = false
+        for (id, e) in entries { entries[id]?.ref = grab(id, code: e.code, mods: e.mods) }
     }
 
     /// Parses "ctrl+alt+shift+k", "cmd+option+left", "hyper+1".

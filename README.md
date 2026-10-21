@@ -230,6 +230,8 @@ oz.on("windowCreated", function (w) { oz.log("new:", w.app, w.title); });
 oz.set({ doubleTap: { action: function () { oz.appExpose(); } } });
 ```
 
+**Pass-through apps.** While an app in `passThroughApps` is in front, Oz lets go of all of its shortcuts and gestures so they reach that app. The default list covers Moonlight (so its ⌃⌥⇧Q disconnect works), Parsec, Microsoft Remote Desktop, Screen Sharing, VNC Viewer, Jump Desktop, TeamViewer, AnyDesk and GeForce NOW. Entries are bundle ids or app names: `oz.set({ passThroughApps: ["com.moonlight-stream.Moonlight", "UTM"] })`.
+
 **`oz` API:** `set`, `settings()`, `bind`, `rule`, `on` (events: `windowCreated`, `windowFocused`, `windowFloated`, `swipeEnded`, `spaceChanged`, `spaceTilingChanged`, `configLoaded`), `command(name, arg)`, one function per command (`oz.focusDown()`, `oz.setHeight(0.5)`, …), `windows()`, `focusedWindow()`, `exec(cmd)` (runs in the background), `shell(cmd)` (returns the output), `notify(title, text)`, `log(...)`.
 
 **Commands:** `focusUp/Down/Left/Right/First/Last`, `focusRow(n)`, `moveUp/Down/Left/Right/First/Last`, `slurpIn`, `barfOut`, `joinUp`, `joinDown`, `cycleWidth`, `cycleWidthBack`, `setWidth(ratio)`, `resizeWidth(±ratio)`, `equalizeRow`, `cycleHeight`, `cycleHeightBack`, `setHeight(ratio|pt)`, `resizeHeight(±ratio)`, `toggleFullHeight`, `center`, `alignTop`, `scrollUp(ratio)`, `scrollDown(ratio)`, `scrollBy(pt)`, `scrollToTop`, `scrollToBottom`, `toggleFloat`, `toggleMaximize`, `closeWindow`, `moveToNextScreen`, `undo`, `retile`, `toggleTiling`, `toggleSpaceTiling`, `editScrollArea`, `openSettings`, `reloadConfig`, `missionControl`, `appExpose`, `showDesktop`, `launchpad`.

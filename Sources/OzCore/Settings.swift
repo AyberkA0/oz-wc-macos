@@ -67,6 +67,13 @@ public struct Settings {
     public var slowAppThreshold = 30.0
     public var swipe = SwipeSettings()
     public var doubleTap = DoubleTapSettings()
+    /// While one of these apps is frontmost (bundle id or name, case-insensitive) Oz lets
+    /// go of its shortcuts and gestures so the app gets them: remote desktops, game streaming.
+    public var passThroughApps = [
+        "com.moonlight-stream.Moonlight", "tv.parsec.www", "com.microsoft.rdc.macos",
+        "com.apple.ScreenSharing", "com.realvnc.vncviewer", "com.p5sys.jump.mac.viewer",
+        "com.teamviewer.TeamViewer", "com.anydesk.anydeskmacos", "com.nvidia.gfnpc.mall",
+    ]
     public var debug = false
 
     public init() {}
@@ -102,6 +109,7 @@ public struct Settings {
         if let v = j["slowAppProxy"] as? Bool { slowAppProxy = v }
         if let v = j["smoothScroll"] as? Bool { smoothScroll = v }
         if let v = num(j["slowAppThreshold"]), v > 0 { slowAppThreshold = v }
+        if let a = j["passThroughApps"] as? [Any] { passThroughApps = a.compactMap { $0 as? String } }
         if let v = j["debug"] as? Bool { debug = v }
 
         if let s = j["swipe"] as? [String: Any] {
@@ -125,6 +133,11 @@ public struct Settings {
             if let v = d["action"] as? String, !v.isEmpty { doubleTap.action = v }
             if let v = num(d["interval"]), v > 0 { doubleTap.interval = v }
         }
+    }
+
+    public func passesThrough(bundleID: String?, name: String?) -> Bool {
+        let keys = [bundleID, name].compactMap { $0?.lowercased() }
+        return passThroughApps.contains { keys.contains($0.lowercased()) }
     }
 
     private static func number(_ v: Any?) -> Double? {

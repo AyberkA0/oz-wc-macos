@@ -84,6 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         started = true
 
         gestures.handler = { [unowned self] e in
+            if HotkeyCenter.shared.suspended { return }
             if case .doubleTap = e {
                 runDoubleTap()
             } else {
@@ -91,6 +92,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         gestures.start()
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
+                                                          object: nil, queue: .main) { [weak self] _ in
+            self?.updatePassThrough()
+        }
+        updatePassThrough()
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification,
                                                           object: nil, queue: .main) { [weak self] _ in
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self?.gestures.restart() }
@@ -106,6 +112,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         Log.info("Oz started")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.offerTrackpadSetup() }
+    }
+
+    /// A pass-through app in front (Moonlight, a remote desktop) gets every key and gesture.
+    private func updatePassThrough() {
+        let app = NSWorkspace.shared.frontmostApplication
+        let pass = wm.settings.passesThrough(bundleID: app?.bundleIdentifier, name: app?.localizedName)
+        guard pass != HotkeyCenter.shared.suspended else { return }
+        if pass { HotkeyCenter.shared.suspend() } else { HotkeyCenter.shared.resume() }
+        Log.info("shortcuts \(pass ? "passed through to" : "back from") \(app?.localizedName ?? "?")")
     }
 
     private func runDoubleTap() {
@@ -280,7 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         wm.settings = s
         Log.debugEnabled = s.debug
         gestures.configure(s)
-        if started { wm.settingsChanged() }
+        if started { wm.settingsChanged(); updatePassThrough() }
         settingsWindow.refresh(s)
     }
 

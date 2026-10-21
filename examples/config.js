@@ -46,6 +46,14 @@ oz.set({
     action: "missionControl",    // "appExpose" | "showDesktop" | "launchpad" | a command | function
   },
 
+  // While one of these apps is in front, Oz lets go of its shortcuts and gestures so the
+  // app gets them (e.g. Moonlight's ⌃⌥⇧Q disconnect). Bundle ids or app names.
+  passThroughApps: [
+    "com.moonlight-stream.Moonlight", "tv.parsec.www", "com.microsoft.rdc.macos",
+    "com.apple.ScreenSharing", "com.realvnc.vncviewer", "com.p5sys.jump.mac.viewer",
+    "com.teamviewer.TeamViewer", "com.anydesk.anydeskmacos", "com.nvidia.gfnpc.mall",
+  ],
+
   debug: false,                  // verbose log
 });
 
