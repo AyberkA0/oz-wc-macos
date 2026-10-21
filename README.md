@@ -35,7 +35,7 @@
 
 - Smooth three-finger scrolling with momentum, independent of how fast apps respond.
 - Rows that hold one window or several side by side, with keyboard and mouse control over heights and widths.
-- An optional **Oz zone**: the strip can occupy only part of the screen (for example the right half), with the rest tiled into fixed regions.
+- An optional **scroll area**: the strip can occupy only part of the screen (for example the right half), with the rest tiled into fixed regions.
 - Drag and drop: split lines show exactly where a window will land; tabs torn off into new windows land where you drop them.
 - Per-desktop settings, undo, and layouts that survive restarts.
 - Configured from a Settings window or a JavaScript file.
@@ -44,7 +44,7 @@
 
 - [Installation](#installation)
 - [Using the strip](#using-the-strip)
-- [The Oz zone](#the-oz-zone)
+- [The scroll area](#the-scroll-area)
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Settings](#settings)
 - [Configuration file](#configuration-file)
@@ -78,7 +78,7 @@ On first launch:
 
 > **Building from source:** with an ad-hoc signature, every build changes the code signature and macOS revokes the Accessibility permission. Run `./scripts/create-signing-cert.sh` once to add a self-signed "Oz Local Signing" identity to your login keychain; `make app` then uses it and permissions persist across rebuilds (`SIGN_ID=...` selects another identity).
 
-The menu bar icon provides: tiling on/off (globally or for the current desktop), live capture, smooth scrolling, the Oz zone, Settings, retile, editing and reloading the configuration file, the log, trackpad setup, and quit. When Oz quits, it returns every window it had moved off screen.
+The menu bar icon provides: tiling on/off (globally or for the current desktop), live capture, smooth scrolling, the scroll area, Settings, retile, editing and reloading the configuration file, the log, trackpad setup, and quit. When Oz quits, it returns every window it had moved off screen.
 
 <p align="center"><img src="docs/media/road.svg" alt="" width="100%"></p>
 
@@ -110,8 +110,8 @@ When Oz opens Mission Control or App Exposé (double tap, `⌃⌥ m`, `⌃⌥⇧
 ### Full screen, undo and saved layouts
 
 - **Double-click a title bar** (macOS zoom): the window fills the entire usable screen while the rest of the strip stays in place behind it. Double-click again to return it to its position. The same is available as `toggleMaximize` (`⌃⌥⇧ f`). Rearranging the strip restores the window first.
-- **Undo** (`⌃⌥ z`) reverts the strip to its state before the last change: keyboard moves and resizes, drag and drop, mouse resizes, or a window dragged out of the zone (which returns to the strip). Up to 20 steps per strip.
-- **Saved layouts.** Each desktop's arrangement (rows, heights, widths, positions within rows, scroll position, focus, and windows placed around the zone) is saved to `~/Library/Application Support/Oz/layout.json` whenever it changes and when Oz quits, and restored on the next launch. Windows are matched by their window ID (stable while the app keeps running) or, if the app was restarted, by application and title. Unrecognised windows are appended after the restored ones.
+- **Undo** (`⌃⌥ z`) reverts the strip to its state before the last change: keyboard moves and resizes, drag and drop, mouse resizes, or a window dragged out of the scroll area (which returns to the strip). Up to 20 steps per strip.
+- **Saved layouts.** Each desktop's arrangement (rows, heights, widths, positions within rows, scroll position, focus, and windows placed around the scroll area) is saved to `~/Library/Application Support/Oz/layout.json` whenever it changes and when Oz quits, and restored on the next launch. Windows are matched by their window ID (stable while the app keeps running) or, if the app was restarted, by application and title. Unrecognised windows are appended after the restored ones.
 
 <p align="center"><img src="docs/media/maximize.svg" alt="Double-clicking a title bar to fill the screen" width="720"></p>
 
@@ -121,37 +121,37 @@ Tiling can be turned on or off for each desktop individually with `⌃⌥⇧ esc
 
 <p align="center"><img src="docs/media/road.svg" alt="" width="100%"></p>
 
-## The Oz zone
+## The scroll area
 
-By default the strip spans the whole screen. The **Oz zone** limits it to part of the screen and leaves the rest for windows that should stay in place.
+By default the strip spans the whole screen. A **scroll area** limits it to part of the screen and leaves the rest for windows that should stay in place.
 
-Choose menu bar › *Set Scroll Area…* (or `⌃⌥⇧ a`). The editor hides your windows behind the desktop picture and dims everything outside the selected area. Resize the area by its edges and corners, drag it to move it, draw a new one, or use a preset (left or right half, left or right two thirds, full screen). Return saves, Esc cancels. Windows in the strip are then clipped at the zone's top and bottom edges in the same way they slide off the top of the screen. Each desktop has its own zone, remembered across restarts; *Reset Scroll Area* returns to the full screen.
+Choose menu bar › *Set Scroll Area…* (or `⌃⌥⇧ a`). The editor hides your windows behind the desktop picture and dims everything outside the selected area. Resize the area by its edges and corners, drag it to move it, draw a new one, or use a preset (left or right half, left or right two thirds, full screen). Return saves, Esc cancels. Windows in the strip are then clipped at the scroll area's top and bottom edges in the same way they slide off the top of the screen. Each desktop has its own scroll area, remembered across restarts; *Reset Scroll Area* returns to the full screen.
 
-<p align="center"><img src="docs/media/zone.svg" alt="The Oz zone editor" width="720"></p>
+<p align="center"><img src="docs/media/zone.svg" alt="The scroll area editor" width="720"></p>
 
 ### Split lines
 
-While you drag a window over the zone, a highlighted line shows where it will be placed:
+While you drag a window over the scroll area, a highlighted line shows where it will be placed:
 
 - a **horizontal line** between two rows: above the row under the cursor when the cursor is in its upper half, below it otherwise;
 - a **vertical line** beside a window when the cursor is near its left or right edge, in which case the two share the row.
 
-Release to move the window into that slot. This also applies to windows already in the strip, so the strip can be reordered by dragging. If no line appears, the window would return to its current position. To reach rows outside the view, hold the cursor in the band along the zone's top or bottom edge (15% of its height): the strip starts scrolling after a short delay, faster closer to the edge. Scrolling only becomes available once the drag has passed through the middle of the zone, so picking up a window by its title bar near the top does not trigger it.
+Release to move the window into that slot. This also applies to windows already in the strip, so the strip can be reordered by dragging. If no line appears, the window would return to its current position. To reach rows outside the view, hold the cursor in the band along the scroll area's top or bottom edge (15% of its height): the strip starts scrolling after a short delay, faster closer to the edge. Scrolling only becomes available once the drag has passed through the middle of the scroll area, so picking up a window by its title bar near the top does not trigger it.
 
 <p align="center"><img src="docs/media/split-lines.svg" alt="Dragging a window between rows" width="720"></p>
 
-### Windows around the zone
+### Windows around the scroll area
 
-With a zone set, the remaining screen space holds windows that do not scroll:
+With a scroll area set, the remaining screen space holds windows that do not scroll:
 
-- **Dragging a window out** of the zone removes it from the strip; the strip closes the gap.
-- **Tearing off a tab** (Chrome, Safari, Finder, Terminal and others) outside the zone keeps the new window there; inside the zone, it joins the strip.
-- **Regions.** The space around the zone is divided into rectangles: one for each side of the zone wide enough to hold a window (150 pt), using as few rectangles as possible and assigning each corner to the side that yields the longest rectangle. A window dropped outside the zone is tiled into the region under the cursor. Alone, it fills the region; if the region is already occupied, the region is split along its longer side (stacked in a tall region, side by side in a wide one) and the new window takes the half under the cursor. When a window leaves, the others expand to fill the space; when the zone is resized, windows move to the region that now contains them.
-- **Returning to the strip.** Dragging a window back into the zone inserts it where the split line indicates. This also applies to windows floated with `toggleFloat`; windows that float because of a rule or a fixed size remain floating.
+- **Dragging a window out** of the scroll area removes it from the strip; the strip closes the gap.
+- **Tearing off a tab** (Chrome, Safari, Finder, Terminal and others) outside the scroll area keeps the new window there; inside the scroll area, it joins the strip.
+- **Regions.** The space around the scroll area is divided into rectangles: one for each side of the scroll area wide enough to hold a window (150 pt), using as few rectangles as possible and assigning each corner to the side that yields the longest rectangle. A window dropped outside the scroll area is tiled into the region under the cursor. Alone, it fills the region; if the region is already occupied, the region is split along its longer side (stacked in a tall region, side by side in a wide one) and the new window takes the half under the cursor. When a window leaves, the others expand to fill the space; when the scroll area is resized, windows move to the region that now contains them.
+- **Returning to the strip.** Dragging a window back into the scroll area inserts it where the split line indicates. This also applies to windows floated with `toggleFloat`; windows that float because of a rule or a fixed size remain floating.
 
-While you drag, a translucent panel (Liquid Glass on macOS 26 and later, frosted glass on earlier versions) previews where the window will land: its slot in a region, or the zone itself when it would join the strip.
+While you drag, a translucent panel (Liquid Glass on macOS 26 and later, frosted glass on earlier versions) previews where the window will land: its slot in a region, or the scroll area itself when it would join the strip.
 
-<p align="center"><img src="docs/media/regions.svg" alt="Windows tiled in the regions around the zone" width="720"></p>
+<p align="center"><img src="docs/media/regions.svg" alt="Windows tiled in the regions around the scroll area" width="720"></p>
 <p align="center"><img src="docs/media/tear-off.svg" alt="Tearing a tab off into a region" width="720"></p>
 
 <p align="center"><img src="docs/media/road.svg" alt="" width="100%"></p>
@@ -176,7 +176,7 @@ While you drag, a translucent panel (Liquid Glass on macOS 26 and later, frosted
 | `⌃⌥ return` | new Terminal window | | `⌃⌥⇧ q` | close the window |
 | `⌃⌥ n` | move to the next display | | `⌃⌥ m` / `⌃⌥⇧ m` | Mission Control / App Exposé |
 | `⌃⌥⇧ t` | toggle tiling | | `⌃⌥⇧ esc` | toggle tiling for this desktop |
-| `⌃⌥⇧ c` | reload the configuration | | `⌃⌥⇧ a` | edit this desktop's Oz zone |
+| `⌃⌥⇧ c` | reload the configuration | | `⌃⌥⇧ a` | edit this desktop's scroll area |
 | `⌃⌥ /` | show a shortcut summary | | | |
 
 <p align="center"><img src="docs/media/road.svg" alt="" width="100%"></p>
@@ -241,7 +241,7 @@ build/Oz.app/Contents/MacOS/OzWM msg setHeight 0.5
 
 - **Window control.** Windows are moved and resized through the Accessibility API (`AXUIElement`); new, closed and focused windows are tracked with `AXObserver`. Moves are applied off the main thread on one queue per application, keeping only the most recent target per window, so a slow application never stalls scrolling. Layout runs once per display frame (`CADisplayLink`).
 - **Gestures.** Raw trackpad contacts are read from `MultitouchSupport.framework` and turned into swipes and taps by a small recognizer (`Multitouch.swift`, `GestureRecognizer.swift`).
-- **Structure.** One strip per desktop and display. The layout logic (the strip, drop slots, drag scrolling, regions around the zone, saved layouts) is in the `OzCore` module and covered by unit tests; `OzWM` connects it to macOS.
+- **Structure.** One strip per desktop and display. The layout logic (the strip, drop slots, drag scrolling, regions around the scroll area, saved layouts) is in the `OzCore` module and covered by unit tests; `OzWM` connects it to macOS.
 - **Windows at the top edge.** macOS does not allow a window above the menu bar. With `topOverflow: "slide"` (the default), a window crossing the top edge is moved off screen and drawn in its place from a capture of its own content, clipped at the edge, so it slides out just as it does at the bottom. The partly visible window remains clickable and brings the real window back. With `livePeek`, the capture is refreshed at `livePeekFPS` (at 1x resolution) so video keeps playing. Captures start only when a window reaches the edge and stop after about two seconds without changes, so the system's recording indicator appears only while something is being captured. `topOverflow: "shrink"` (pinned and resized) and `"hide"` never capture. Windows entirely out of view are moved to the bottom-right corner of the screen.
 - **Smooth scrolling** (`smoothScroll`, on by default). While the strip moves, every window is drawn from a snapshot and the real windows are moved once when the motion ends, so scrolling stays smooth regardless of how quickly applications respond. Window contents are static during the motion. Oz keeps recent snapshots of visible windows so the next swipe can use them from its first frame. When disabled, only windows of slow applications are drawn this way.
 - **Slow applications.** Some applications take 50–120 ms to apply a move. Oz tracks each application's recent worst move time; windows of applications above `slowAppThreshold` (30 ms) are drawn from a capture while the strip moves (`slowAppProxy`).
