@@ -131,7 +131,7 @@ Choose menu bar › *Set Scroll Area…* (or `⌃⌥⇧ a`). The editor hides yo
 
 ### Split lines
 
-While you drag a window over the scroll area, a highlighted line shows where it will be placed:
+While you drag a window over the scroll area, a rod of glass shows where it will be placed:
 
 - a **horizontal line** between two rows: above the row under the cursor when the cursor is in its upper half, below it otherwise;
 - a **vertical line** beside a window when the cursor is near its left or right edge, in which case the two share the row.

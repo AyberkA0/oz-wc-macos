@@ -160,17 +160,17 @@ final class DropPreview {
     }
 }
 
-/// Inside the Oz zone the landing place is a split line: between two rows (horizontal) or
-/// beside a window in its row (vertical). A glowing accent-coloured bar, above the windows.
+/// Inside the scroll area the landing place is a split line: between two rows (horizontal) or
+/// beside a window in its row (vertical). A rod of clear Liquid Glass, like the drop preview,
+/// above the windows; it jumps straight to each slot (one that slides lags behind the cursor).
 final class InsertionLine {
     private let window: NSPanel
-    private let bar = CALayer()
     private var shown: CGRect?
 
-    static let thickness: CGFloat = 6
+    static let thickness: CGFloat = 16
 
     init() {
-        window = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        window = ActiveLookPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = false
@@ -179,34 +179,36 @@ final class InsertionLine {
         window.isReleasedWhenClosed = false
         window.animationBehavior = .none
         window.collectionBehavior = [.ignoresCycle, .fullScreenNone, .transient]
-        window.alphaValue = 0
-        let view = NSView()
-        view.wantsLayer = true
-        view.layer?.masksToBounds = false
-        bar.backgroundColor = NSColor.controlAccentColor.cgColor
-        bar.cornerRadius = InsertionLine.thickness / 2
-        bar.shadowColor = NSColor.controlAccentColor.cgColor
-        bar.shadowOpacity = 0.9
-        bar.shadowRadius = 6
-        bar.shadowOffset = .zero
-        bar.actions = ["bounds": NSNull(), "position": NSNull(), "frame": NSNull()]
-        view.layer?.addSublayer(bar)
-        window.contentView = view
+
+        let radius = InsertionLine.thickness / 2
+        let light = GlassLight(radius: radius)
+        if #available(macOS 26.0, *) {
+            let glass = NSGlassEffectView()
+            glass.style = .clear
+            glass.cornerRadius = radius
+            glass.contentView = light
+            window.contentView = glass
+        } else {
+            let blur = NSVisualEffectView()
+            blur.material = .hudWindow
+            blur.blendingMode = .behindWindow
+            blur.state = .active
+            blur.wantsLayer = true
+            blur.layer?.cornerRadius = radius
+            blur.layer?.masksToBounds = true
+            light.frame = blur.bounds
+            light.autoresizingMask = [.width, .height]
+            blur.addSubview(light)
+            window.contentView = blur
+        }
     }
 
-    /// `frame`: the bar, AX coordinates. The window is a little larger so the glow isn't cut.
-    /// Moves and appears at once: a line that slides lags behind the cursor.
+    /// `frame`: the rod, AX coordinates.
     func show(_ frame: CGRect) {
         guard shown != frame else { return }
-        let pad: CGFloat = 10
-        let ns = NSRect(x: frame.minX - pad, y: Geometry.primaryHeight - frame.maxY - pad,
-                        width: frame.width + 2 * pad, height: frame.height + 2 * pad)
-        window.setFrame(ns, display: false)
-        bar.frame = CGRect(x: pad, y: pad, width: frame.width, height: frame.height)
-        if shown == nil {
-            window.alphaValue = 1
-            window.orderFrontRegardless()
-        }
+        window.setFrame(NSRect(x: frame.minX, y: Geometry.primaryHeight - frame.maxY, width: frame.width, height: frame.height),
+                        display: true)
+        if shown == nil { window.orderFrontRegardless() }
         shown = frame
     }
 
