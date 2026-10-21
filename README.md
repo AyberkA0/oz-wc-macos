@@ -10,6 +10,8 @@
 
 # Oz
 
+> **About this repository.** oz-wm-macos is the [Oz window manager](https://github.com/AyberkA0/oz-wm) wrapped for macOS. It is not a window manager in the full sense: macOS does not let third-party software replace its window server, so Oz runs as an ordinary app that rearranges other apps' windows through the Accessibility API, with workarounds where the system does not allow what it needs (such as snapshots for windows that slide off the top of the screen). The actual window manager is [oz-wm](https://github.com/AyberkA0/oz-wm), a Wayland compositor for Linux that draws every window itself.
+
 **Oz is a scrolling tiling window manager for macOS.** Instead of shrinking every window to fit the screen, it places them one after another on an endless **vertical strip** and treats the screen as a view onto that strip. Every window keeps a usable size; you move along the strip by **swiping up and down with three fingers**, and it settles on a window edge when you let go.
 
 ```
