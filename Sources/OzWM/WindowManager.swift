@@ -314,7 +314,12 @@ final class WindowManager {
         setupSnapshots()
         scanAll(initial: true)
         // Written when it changed: a few seconds of rearranging at most are lost to a crash.
-        saveTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.saveLayout() }
+        // The same tick tidies up what piles up over a long run.
+        saveTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            self?.saveLayout()
+            self?.housekeeping()
+        }
+        saveTimer?.tolerance = 1
     }
 
     /// Put every hidden/shrunk window back on screen (on quit or when tiling is turned off).
@@ -421,6 +426,40 @@ final class WindowManager {
         Log.debug("undo: \(undoStacks[key]?.count ?? 0) step(s) left")
         relayout(key, animated: true)
         return true
+    }
+
+    // MARK: Housekeeping
+
+    /// Keeps a long-running Oz small: drops snapshots of windows that aren't on screen and
+    /// haven't been needed for a minute, empty strips left by looking at a desktop, and the
+    /// per-strip and per-window bookkeeping of things that are gone.
+    private func housekeeping() {
+        guard enabled, !isMoving, !overviewActive else { return }
+        let visible = visibleKeys()
+        var keep = proxied
+        for (key, screen) in visible {
+            guard let strip = strips[key] else { continue }
+            for item in strip.layout(params(screen), scroll: strip.renderScrollY, minHeights: minHeights) {
+                if case .park = item.placement { continue }
+                keep.insert(item.id)
+            }
+        }
+        for id in windows.keys where overlays.isShowing(id) { keep.insert(id) }
+        snapshots.evict(olderThan: 60, keeping: keep)
+
+        for (key, strip) in strips where strip.isEmpty && visible[key] == nil && animations[key] == nil {
+            strips.removeValue(forKey: key)
+        }
+        let live = Set(strips.keys)
+        for key in Array(undoStacks.keys) where !live.contains(key) { undoStacks.removeValue(forKey: key) }
+        for key in Array(indicatedScroll.keys) where !live.contains(key) { indicatedScroll.removeValue(forKey: key) }
+        for key in Array(maximized.keys) where !live.contains(key) { maximized.removeValue(forKey: key) }
+        for key in Array(pendingActivation.keys) where !live.contains(key) { pendingActivation.removeValue(forKey: key) }
+        let now = CACurrentMediaTime()
+        for (id, t) in userDragged where now - t > 10 { userDragged.removeValue(forKey: id) }
+        for (id, t) in lastResnap where now - t > 10 || windows[id] == nil { lastResnap.removeValue(forKey: id) }
+        for (id, t) in dockPlacedAt where now - t > 10 { dockPlacedAt.removeValue(forKey: id) }
+        for key in Array(docks.keys) where docks[key]?.isEmpty ?? true { docks.removeValue(forKey: key) }
     }
 
     // MARK: Saved layout
@@ -909,6 +948,7 @@ final class WindowManager {
         snapshots.remove(id)
         forgetFloating(id)
         userDragged.removeValue(forKey: id)
+        lastResnap.removeValue(forKey: id)
         minHeights.removeValue(forKey: id)
         guard let w = windows.removeValue(forKey: id) else { return }
         w.frameCheck?.cancel()

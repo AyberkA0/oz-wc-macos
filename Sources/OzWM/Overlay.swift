@@ -93,7 +93,19 @@ final class SnapshotCache {
 
     func isCapturing(_ id: CGWindowID) -> Bool { inFlight.contains(id) }
 
-    func remove(_ id: CGWindowID) { entries.removeValue(forKey: id) }
+    func remove(_ id: CGWindowID) {
+        entries.removeValue(forKey: id)
+        failedAt.removeValue(forKey: id)
+    }
+
+    /// Drops snapshots not used for `age` seconds, except those of `keep` (windows on screen
+    /// or drawn by a stand-in): pictures of windows far away or on other desktops are the bulk
+    /// of Oz's memory, and are taken again when needed.
+    func evict(olderThan age: CFTimeInterval, keeping keep: Set<CGWindowID>) {
+        let now = CACurrentMediaTime()
+        for (id, e) in entries where !keep.contains(id) && now - e.time > age { entries.removeValue(forKey: id) }
+        for (id, t) in failedAt where now - t > 60 { failedAt.removeValue(forKey: id) }
+    }
 
     func clear() { entries.removeAll() }
 
@@ -168,8 +180,9 @@ final class SnapshotCache {
 /// playing video, scrolling text, etc. instead of showing a still.
 final class LiveMirror {
     let id: CGWindowID
-    /// Main thread: (frame, tiny signature for change detection).
-    var onFrame: ((CGImage, [UInt8]) -> Void)?
+    /// Main thread: (frame, tiny signature for change detection). The frame is nil when the
+    /// window hasn't changed since the last one (nothing to correct or draw).
+    var onFrame: ((CGImage?, [UInt8]) -> Void)?
     private let fps: Double
     private var timer: DispatchSourceTimer?
     private let lock = NSLock()
@@ -178,6 +191,8 @@ final class LiveMirror {
     /// Frames since the colour shift was last measured, and whether a clear reading exists.
     private var sinceMeasure = 0
     private var measured = false
+    /// Signature of the last captured frame as captured (before any colour correction).
+    private var lastRaw: [UInt8] = []
 
     /// True-colour snapshot of the window: every frame's colours are measured against it
     /// and corrected (see ColorShift) before delivery.
@@ -200,6 +215,14 @@ final class LiveMirror {
         let measureEvery = Int(fps * 2)
         t.setEventHandler { [weak self] in
             guard var image = WindowCapture.image(id, nominal: true) else { return }
+            // Unchanged since the last frame (most of the time, for anything but video): skip
+            // the colour work and the redraw, just report it so an idle stream can stop.
+            let raw = SnapshotCache.signature(image)
+            if let self, raw == self.lastRaw {
+                DispatchQueue.main.async { self.onFrame?(nil, raw) }
+                return
+            }
+            self?.lastRaw = raw
             if let self {
                 self.lock.lock(); let ref = self.reference; self.lock.unlock()
                 // Measured until there is a clear reading (the window parks a moment after
@@ -218,8 +241,8 @@ final class LiveMirror {
                 }
                 if let b = self.bias, let corrected = ColorShift.apply(b, to: image) { image = corrected }
             }
-            let signature = SnapshotCache.signature(image)
-            DispatchQueue.main.async { self?.onFrame?(image, signature) }
+            let frame = image
+            DispatchQueue.main.async { self?.onFrame?(frame, raw) }
         }
         t.resume()
         timer = t
@@ -257,13 +280,16 @@ enum ColorShift {
     }
 
     /// Adds `bias` to every pixel (saturating), keeping the image's format and colour space.
+    /// One table lookup per byte, in the frame's own byte order: the matrix multiply used
+    /// before went through 16-bit planar copies and (un)premultiplying, several times the work.
     static func apply(_ bias: [Int16], to image: CGImage) -> CGImage? {
-        guard let format = vImage_CGImageFormat(cgImage: image) else { return nil }
-        guard var buffer = try? vImage_Buffer(cgImage: image, format: format) else { return nil }
+        guard bias.count == 4, image.bitsPerPixel == 32, image.bitsPerComponent == 8,
+              let format = vImage_CGImageFormat(cgImage: image),
+              var buffer = try? vImage_Buffer(cgImage: image, format: format) else { return nil }
         defer { buffer.free() }
-        let identity: [Int16] = [1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1]
-        var post = bias.map(Int32.init)
-        let err = vImageMatrixMultiply_ARGB8888(&buffer, &buffer, identity, 1, nil, &post, vImage_Flags(kvImageNoFlags))
+        let tables = bias.map { b in (0..<256).map { Pixel_8(clamping: $0 + Int(b)) } }
+        let err = vImageTableLookUp_ARGB8888(&buffer, &buffer, tables[0], tables[1], tables[2], tables[3],
+                                             vImage_Flags(kvImageNoFlags))
         guard err == kvImageNoError else { return nil }
         return try? buffer.createCGImage(format: format)
     }
@@ -427,7 +453,7 @@ final class OverlayManager {
         mirror.setReference(o.reference)
         mirror.onFrame = { [weak o] image, signature in
             guard let o, o.shown else { return }
-            if signature == o.lastSignature {
+            guard let image, signature != o.lastSignature else {
                 o.unchangedFrames += 1
                 if o.unchangedFrames >= idleLimit {
                     Log.debug("live mirror \(id) idle, stopping")
@@ -451,10 +477,6 @@ final class OverlayManager {
         mirror.start()
     }
 
-    /// Places the window image so its top edge sits on the row's top edge, at the image's own
-    /// aspect ratio. A window the app keeps taller than its row (minimum size) then just
-    /// runs past the row's bottom, exactly like the real window would, instead of being squashed.
-    /// AppKit views are bottom-up and clip: only the part inside the overlay shows.
     /// Fills the window's frame with the picture, top-left aligned, cropping what sticks out:
     /// a picture of the right size fits exactly; one taken at another size (a stale stand-in,
     /// a window taller than asked) is cropped rather than shrunk, so there are never gaps
@@ -531,11 +553,12 @@ final class OverlayManager {
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = duration
             o.window.animator().alphaValue = 0
-        }, completionHandler: {
+        }, completionHandler: { [weak self] in
             guard o.fading else { return }  // shown again meanwhile
             o.fading = false
             o.shown = false
             o.window.ignoresMouseEvents = true
+            self?.release(o)
         })
     }
 
@@ -554,6 +577,7 @@ final class OverlayManager {
         }
         o.window.alphaValue = 0
         o.window.ignoresMouseEvents = true
+        release(o)
     }
 
     private func stopLive(_ o: Overlay) {
@@ -565,6 +589,16 @@ final class OverlayManager {
         o.unchangedFrames = 0
         o.lastSignature = []
         o.image = nil
+    }
+
+    /// A hidden overlay stays ordered in (see `Overlay.shown`) but holds nothing: no picture,
+    /// and a 1x1 window, so its backing store shrinks to nothing too.
+    private func release(_ o: Overlay) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        o.imageLayer.contents = nil
+        CATransaction.commit()
+        o.window.setFrame(NSRect(x: o.window.frame.minX, y: o.window.frame.minY, width: 1, height: 1), display: false)
     }
 
     func isShowing(_ id: CGWindowID) -> Bool {

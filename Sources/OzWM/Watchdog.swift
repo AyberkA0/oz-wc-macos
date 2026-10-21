@@ -12,7 +12,8 @@ enum Watchdog {
 
     static func start() {
         mainThread = mach_thread_self()
-        let t = Timer(timeInterval: 0.02, repeats: true) { _ in
+        // 20 beats a second (not 50): a 100 ms hitch is still caught, with fewer wake-ups.
+        let t = Timer(timeInterval: 0.05, repeats: true) { _ in
             lock.lock(); lastBeat = CACurrentMediaTime(); lock.unlock()
         }
         RunLoop.main.add(t, forMode: .common)
@@ -20,7 +21,7 @@ enum Watchdog {
             var stallStart: CFTimeInterval = 0
             var stack: [String] = []
             while true {
-                Thread.sleep(forTimeInterval: 0.02)
+                Thread.sleep(forTimeInterval: 0.05)
                 lock.lock(); let beat = lastBeat; lock.unlock()
                 let gap = CACurrentMediaTime() - beat
                 if gap > 0.1 {
@@ -29,7 +30,7 @@ enum Watchdog {
                         stack = mainStack()
                     }
                 } else if stallStart != 0 {
-                    let ms = Int((beat - stallStart) * 1000) + 20
+                    let ms = Int((beat - stallStart) * 1000) + 50
                     if !isIdle(stack) {
                         Log.info("[stall] main thread blocked \(ms) ms in:\n    " + stack.joined(separator: "\n    "))
                     }

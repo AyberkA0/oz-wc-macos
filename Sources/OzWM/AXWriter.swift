@@ -69,6 +69,10 @@ final class AXWriter {
 
     func forget(pid: pid_t) {
         queues.removeValue(forKey: pid)
+        lock.lock()
+        latency.removeValue(forKey: pid)
+        lastSlowReport.removeValue(forKey: pid)
+        lock.unlock()
     }
 
     private func queue(_ pid: pid_t) -> DispatchQueue {
@@ -78,7 +82,7 @@ final class AXWriter {
         return q
     }
 
-    private var lastSlowReport: [pid_t: CFTimeInterval] = [:]  // writer queues only
+    private var lastSlowReport: [pid_t: CFTimeInterval] = [:]  // guarded by `lock`
     /// Worst recent move time per app (ms) and when it was measured, guarded by `lock`.
     /// A peak that fades (half-life 20 s) rather than an average: apps like WhatsApp are
     /// fast most of the time but stall for ~100 ms now and then, and those spikes are

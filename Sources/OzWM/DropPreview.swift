@@ -78,6 +78,8 @@ final class DropPreview {
         }, completionHandler: { [weak self] in
             guard let self, self.shown == nil else { return }  // shown again meanwhile
             self.window.orderOut(nil)
+            // A region-sized pane of glass keeps a backing store that size: let it go.
+            self.window.setFrame(NSRect(x: 0, y: 0, width: 1, height: 1), display: false)
         })
     }
 }

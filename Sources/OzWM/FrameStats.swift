@@ -11,6 +11,9 @@ enum FrameStats {
         let t0 = CACurrentMediaTime()
         if times.isEmpty { start = t0 }
         body()
+        // Reported (and emptied) after a swipe or animation; motion that isn't (a drag
+        // scrolling the strip, a live resize) mustn't grow it for ever.
+        if times.count >= 4096 { times.removeFirst(2048) }
         times.append((CACurrentMediaTime() - t0) * 1000)
     }
 
