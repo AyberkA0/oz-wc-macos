@@ -191,6 +191,10 @@ final class WindowManager {
     /// that desktop's windows are seen after Oz starts.
     private var pendingRestore: [String: StripState] = LayoutStore.load()
     private var lastSavedLayout: Data?
+    /// A preset being opened on a desktop: its arrangement is applied as its apps' windows
+    /// show up, for a while after it was opened.
+    private var openingPreset: [StripKey: (preset: Preset, until: CFTimeInterval)] = [:]
+    private var presetApplyWork: [StripKey: DispatchWorkItem] = [:]
     /// Per strip, its arrangement before each of the last layout changes, for `undo`.
     private var undoStacks: [StripKey: [StripState]] = [:]
     private static let undoDepth = 20
@@ -458,6 +462,122 @@ final class WindowManager {
         for (id, t) in dockPlacedAt where now - t > 10 { dockPlacedAt.removeValue(forKey: id) }
         for key in Array(docks.keys) where docks[key]?.isEmpty ?? true { docks.removeValue(forKey: key) }
         for id in Array(proxyShownAt.keys) where !proxied.contains(id) { proxyShownAt.removeValue(forKey: id) }
+    }
+
+    // MARK: Presets
+
+    /// The desktop on `screen` as a preset: the apps of its windows (tiled and docked around
+    /// the scroll area), their arrangement and the scroll area. nil for an empty desktop.
+    func capturePreset(named name: String?, screen: NSScreen) -> Preset? {
+        let key = visibleKey(for: screen)
+        var state = strips[key]?.state(describe: describe) ?? StripState()
+        for (region, ids) in docks[key] ?? [:] {
+            state.docks[String(region)] = ids.compactMap(describe).map {
+                StripState.Window(id: $0.id, app: $0.app, bundleID: $0.bundleID, title: $0.title)
+            }
+        }
+        var apps: [Preset.App] = []
+        var seen = Set<String>()
+        for id in state.windowIDs {
+            guard let w = windows[id] ?? floating[id], seen.insert(w.bundleID ?? w.appName).inserted else { continue }
+            let path = NSRunningApplication(processIdentifier: w.pid)?.bundleURL?.path
+            apps.append(Preset.App(bundleID: w.bundleID, name: w.appName, path: path))
+        }
+        guard !apps.isEmpty else { return nil }
+        let area = scrollAreaFraction(screen).map { [$0.minX, $0.minY, $0.width, $0.height].map(Double.init) }
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Preset(name: trimmed?.isEmpty == false ? trimmed! : Preset.defaultName(for: apps),
+                      desktop: state, scrollArea: area, apps: apps)
+    }
+
+    /// Opens a preset on the desktop on `screen`: its scroll area, its apps (launched in the
+    /// background if they aren't running), and its arrangement, applied as their windows show
+    /// up (for 30 s). Apps already running are asked to reopen (what clicking them in the Dock
+    /// does) unless they have a window on this desktop already.
+    func openPreset(_ preset: Preset, screen: NSScreen) {
+        guard enabled else { return }
+        if !isTiled(screen: screen) { setSpaceTiled(true, screen: screen) }
+        if let a = preset.scrollArea, a.count == 4 {
+            setScrollArea(CGRect(x: a[0], y: a[1], width: a[2], height: a[3]), screen: screen)
+        } else if scrollAreaFraction(screen) != nil {
+            setScrollArea(nil, screen: screen)
+        }
+        let key = visibleKey(for: screen)
+        openingPreset[key] = (preset, CACurrentMediaTime() + 30)
+        let here = Set((strips[key]?.windowIDs ?? []) + (docks[key].map { Array($0.values.joined()) } ?? []))
+        let appsHere = Set(here.compactMap { (windows[$0] ?? floating[$0]).map { $0.bundleID ?? $0.appName } })
+        for app in preset.apps where !appsHere.contains(app.bundleID ?? app.name) {
+            let url = app.bundleID.flatMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }
+                ?? app.path.map { URL(fileURLWithPath: $0) }
+            guard let url else {
+                Log.info("preset \(preset.name): \(app.name) not found")
+                continue
+            }
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = false
+            config.addsToRecentItems = false
+            NSWorkspace.shared.openApplication(at: url, configuration: config) { _, error in
+                if let error { Log.info("preset \(preset.name): could not open \(app.name): \(error.localizedDescription)") }
+            }
+        }
+        Log.info("opening preset \(preset.name): \(preset.apps.map(\.name).joined(separator: ", "))")
+        applyOpeningPreset(key)
+    }
+
+    /// Windows arrive one by one as apps start: arrange once they've settled for a moment.
+    private func schedulePresetApply(_ key: StripKey) {
+        guard openingPreset[key] != nil else { return }
+        presetApplyWork[key]?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.applyOpeningPreset(key) }
+        presetApplyWork[key] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+    }
+
+    /// Puts the windows on this desktop where the preset has them (matched by app and, where
+    /// it still fits, title); finished once every window of the preset is placed or time's up.
+    private func applyOpeningPreset(_ key: StripKey) {
+        presetApplyWork.removeValue(forKey: key)
+        guard let (preset, until) = openingPreset[key] else { return }
+        guard CACurrentMediaTime() < until, enabled else {
+            openingPreset.removeValue(forKey: key)
+            return
+        }
+        let strip = self.strip(key)
+        let candidates = (strip.windowIDs + (docks[key].map { Array($0.values.joined()) } ?? [])).compactMap(describe)
+        var used = Set<CGWindowID>()
+        var docked: [Int: [CGWindowID]] = [:]
+        for (region, list) in preset.desktop.docks {
+            guard let i = Int(region) else { continue }
+            for w in list {
+                if let id = WindowMatcher.matchLoosely(w, in: candidates, excluding: used) {
+                    used.insert(id)
+                    docked[i, default: []].append(id)
+                }
+            }
+        }
+        beginTransition(key)
+        for id in docked.values.joined() {
+            guard let w = windows.removeValue(forKey: id) else { continue }
+            strip.remove(id)
+            floating[id] = w
+            manualFloat.insert(id)
+        }
+        if !docked.isEmpty { docks[key] = docked }
+        let vh = viewportHeight(key)
+        let from = strip.renderScrollY
+        let matched = strip.restore(preset.desktop, maxHeight: vh) { w, u in
+            WindowMatcher.matchLoosely(w, in: candidates, excluding: u.union(used))
+        }
+        // Slide there from where it is.
+        strip.scrollY = strip.clampScroll(strip.scrollY, viewportHeight: vh, gap: settings.gap)
+        strip.renderScrollY = from
+        relayout(key, animated: true)
+        layoutDocks(key)
+        let placed = matched.count + docked.values.joined().count
+        if placed >= preset.desktop.windowIDs.count {
+            openingPreset.removeValue(forKey: key)
+            Log.info("preset \(preset.name) open: \(placed) window(s) in place")
+        }
     }
 
     // MARK: Saved layout
@@ -822,6 +942,7 @@ final class WindowManager {
             }
         }
         layoutVisible(animated: false)
+        for key in openingPreset.keys { schedulePresetApply(key) }
         Log.info("scan: \(windows.count) tiled, \(floating.count) floating, \(strips.count) strip(s)")
     }
 
@@ -936,6 +1057,7 @@ final class WindowManager {
             }
             emit?("windowCreated", info(w))
         }
+        schedulePresetApply(key)
     }
 
     private func unmanage(_ id: CGWindowID, focusNeighbor: Bool) {

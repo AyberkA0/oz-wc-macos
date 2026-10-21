@@ -101,6 +101,36 @@ final class DragDropStateTests: XCTestCase {
         XCTAssertEqual(s.scrollY, 200)
     }
 
+    func testPresetMatchingFallsBackToTheAppsNextWindow() {
+        let live = [WindowDescription(id: 50, app: "Google Chrome", bundleID: "com.google.Chrome", title: "New Tab"),
+                    WindowDescription(id: 51, app: "Google Chrome", bundleID: "com.google.Chrome", title: "Docs"),
+                    WindowDescription(id: 52, app: "WhatsApp", bundleID: "net.whatsapp.WhatsApp", title: "WhatsApp")]
+        // Saved: two Chrome windows (titles that no longer exist except "Docs") and WhatsApp.
+        let docs = StripState.Window(id: 1, app: "Google Chrome", bundleID: "com.google.Chrome", title: "Docs")
+        let mail = StripState.Window(id: 2, app: "Google Chrome", bundleID: "com.google.Chrome", title: "Inbox")
+        let chat = StripState.Window(id: 3, app: "WhatsApp", bundleID: "net.whatsapp.WhatsApp", title: "WhatsApp")
+        // The same title wins; then the app's next unused window; never another app's.
+        XCTAssertEqual(WindowMatcher.matchLoosely(docs, in: live, excluding: []), 51)
+        XCTAssertEqual(WindowMatcher.matchLoosely(mail, in: live, excluding: [51]), 50)
+        XCTAssertNil(WindowMatcher.matchLoosely(mail, in: live, excluding: [50, 51]))
+        XCTAssertEqual(WindowMatcher.matchLoosely(chat, in: live, excluding: []), 52)
+        XCTAssertNil(WindowMatcher.matchLoosely(.init(id: 4, app: "Mail", bundleID: "com.apple.mail", title: "x"),
+                                                in: live, excluding: []))
+    }
+
+    func testPresetRoundTripsAndNamesItself() throws {
+        let apps = [Preset.App(bundleID: "com.google.Chrome", name: "Chrome", path: nil),
+                    Preset.App(bundleID: "com.anthropic.claudefordesktop", name: "Claude", path: nil),
+                    Preset.App(bundleID: "net.whatsapp.WhatsApp", name: "WhatsApp", path: nil),
+                    Preset.App(bundleID: "com.apple.Terminal", name: "Terminal", path: nil)]
+        XCTAssertEqual(Preset.defaultName(for: Array(apps.prefix(3))), "Chrome, Claude, WhatsApp")
+        XCTAssertEqual(Preset.defaultName(for: apps), "Chrome, Claude and 2 more")
+        let p = Preset(name: "Work", created: Date(timeIntervalSince1970: 0),
+                       desktop: StripState(rows: [.init(height: 400, windows: [.init(id: 1, app: "Chrome")])]),
+                       scrollArea: [0.5, 0, 0.5, 1], apps: apps)
+        XCTAssertEqual(try JSONDecoder().decode(Preset.self, from: JSONEncoder().encode(p)), p)
+    }
+
     func testMatchingByIdThenByAppAndTitle() {
         let live = [WindowDescription(id: 10, app: "Terminal", bundleID: "com.apple.Terminal", title: "zsh"),
                     WindowDescription(id: 11, app: "Safari", bundleID: "com.apple.Safari", title: "Docs"),

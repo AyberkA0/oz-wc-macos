@@ -115,6 +115,10 @@ When Oz opens Mission Control or App Exposé (double tap, `⌃⌥ m`, `⌃⌥⇧
 
 <p align="center"><img src="docs/media/maximize.svg" alt="Double-clicking a title bar to fill the screen" width="720"></p>
 
+### Desktop presets
+
+Menu bar › *Save This Desktop as Preset…* saves the apps on the current desktop (for example Chrome, Claude and WhatsApp) together with how their windows are arranged: rows, sizes, positions, the windows placed around the scroll area, and the scroll area itself. Up to five presets can be saved. Choosing *Open Preset: name* applies the preset to the current desktop: apps that are not running are started in the background, and their windows are moved into their saved places as they appear (for up to 30 seconds). Windows are matched by application and, where it still matches, by title. An app that is already running but has no window on this desktop is asked to reopen, as clicking it in the Dock would; most apps open a new window in response. *Delete Preset* removes one.
+
 ### Tiling per desktop
 
 Tiling can be turned on or off for each desktop individually with `⌃⌥⇧ esc` (`toggleSpaceTiling`) or menu bar › *Tile This Desktop*. On a desktop with tiling off, Oz leaves all windows where they are (returning any it had moved off screen) and ignores gestures and shortcuts there. The setting is remembered across restarts, and a window moved to such a desktop is released.

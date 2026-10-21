@@ -254,6 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item("Keep Windows Alive (Live Capture)", #selector(toggleLivePeek)).state = wm.settings.livePeek ? .on : .off
             item("Smooth Scrolling (Snapshots While Moving)", #selector(toggleSmoothScroll)).state = wm.settings.smoothScroll ? .on : .off
             item("Retile", #selector(retile))
+            if wm.enabled { addPresetItems(to: menu) }
         }
         menu.addItem(.separator())
         item("Settings…", #selector(openSettings), key: ",")
@@ -280,6 +281,92 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         gestures.configure(s)
         if started { wm.settingsChanged() }
         settingsWindow.refresh(s)
+    }
+
+    // MARK: Presets
+
+    /// Saved desktops: one item per preset (click opens it), saving this desktop, deleting.
+    private func addPresetItems(to menu: NSMenu) {
+        let presets = PresetStore.load()
+        menu.addItem(.separator())
+        for (i, p) in presets.enumerated() {
+            let it = NSMenuItem(title: "Open Preset: \(p.name)", action: #selector(openPreset(_:)), keyEquivalent: "")
+            it.target = self
+            it.tag = i
+            it.toolTip = p.apps.map(\.name).joined(separator: ", ")
+            menu.addItem(it)
+        }
+        if presets.count < Preset.limit {
+            let it = NSMenuItem(title: "Save This Desktop as Preset…", action: #selector(savePreset), keyEquivalent: "")
+            it.target = self
+            menu.addItem(it)
+        } else {
+            let it = NSMenuItem(title: "Save This Desktop as Preset (\(Preset.limit) saved, delete one first)", action: nil, keyEquivalent: "")
+            it.isEnabled = false
+            menu.addItem(it)
+        }
+        guard !presets.isEmpty else { return }
+        let delete = NSMenu()
+        for (i, p) in presets.enumerated() {
+            let it = NSMenuItem(title: p.name, action: #selector(deletePreset(_:)), keyEquivalent: "")
+            it.target = self
+            it.tag = i
+            delete.addItem(it)
+        }
+        let parent = NSMenuItem(title: "Delete Preset", action: nil, keyEquivalent: "")
+        parent.submenu = delete
+        menu.addItem(parent)
+    }
+
+    @objc private func savePreset() {
+        guard let screen = Geometry.screenUnderMouse() else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        guard let captured = wm.capturePreset(named: nil, screen: screen) else {
+            let alert = NSAlert()
+            alert.messageText = "Nothing to save"
+            alert.informativeText = "There are no windows on this desktop that Oz arranges."
+            alert.runModal()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Save this desktop as a preset"
+        alert.informativeText = "Apps: " + captured.apps.map(\.name).joined(separator: ", ")
+            + "\n\nOpening it later starts these apps and puts their windows back where they are now."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        field.stringValue = captured.name
+        field.placeholderString = Preset.defaultName(for: captured.apps)
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        // Captured again: the layout may have changed while the dialog was up.
+        guard let preset = wm.capturePreset(named: field.stringValue, screen: screen) ?? Optional(captured) else { return }
+        var presets = PresetStore.load()
+        guard presets.count < Preset.limit else { return }
+        presets.append(preset)
+        PresetStore.save(presets)
+        Log.info("saved preset \(preset.name): \(preset.apps.map(\.name).joined(separator: ", "))")
+    }
+
+    @objc private func openPreset(_ sender: NSMenuItem) {
+        let presets = PresetStore.load()
+        guard presets.indices.contains(sender.tag), let screen = Geometry.screenUnderMouse() else { return }
+        wm.openPreset(presets[sender.tag], screen: screen)
+    }
+
+    @objc private func deletePreset(_ sender: NSMenuItem) {
+        var presets = PresetStore.load()
+        guard presets.indices.contains(sender.tag) else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Delete the preset \u{201C}\(presets[sender.tag].name)\u{201D}?"
+        alert.informativeText = "The apps and their windows aren't affected."
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        presets.remove(at: sender.tag)
+        PresetStore.save(presets)
     }
 
     @objc private func openSettings() {

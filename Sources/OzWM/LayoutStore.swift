@@ -38,3 +38,26 @@ enum LayoutStore {
         }
     }
 }
+
+/// Saved desktop presets (`~/Library/Application Support/Oz/presets.json`), at most `Preset.limit`.
+enum PresetStore {
+    static let url = LayoutStore.url.deletingLastPathComponent().appendingPathComponent("presets.json")
+
+    static func load() -> [Preset] {
+        guard let data = try? Data(contentsOf: url), let presets = try? JSONDecoder().decode([Preset].self, from: data) else {
+            return []
+        }
+        return Array(presets.prefix(Preset.limit))
+    }
+
+    static func save(_ presets: [Preset]) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(Array(presets.prefix(Preset.limit))) else { return }
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            Log.info("could not save presets: \(error)")
+        }
+    }
+}
