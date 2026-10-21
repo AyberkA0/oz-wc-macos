@@ -134,6 +134,14 @@ final class WindowManager {
     private var pendingActivation: [StripKey: CGWindowID] = [:]
     /// Windows of slow apps drawn by a stand-in while the strip moves (real one parked).
     private var proxied = Set<CGWindowID>()
+    /// When each stand-in was put up: the real window stays underneath, moving with it, until
+    /// the stand-in has surely reached the screen (a new or resized overlay window takes a
+    /// frame or two), and only then goes off screen. Parking it at once left a frame with
+    /// neither on screen: the window flickered as a swipe started.
+    private var proxyShownAt: [CGWindowID: CFTimeInterval] = [:]
+    /// Stand-ins waiting for their real window to be back before fading (see `handOver`).
+    private var handingOver = Set<CGWindowID>()
+    private static let standInSettle: CFTimeInterval = 0.06
     /// Last focused window as reported by AX notifications (avoids asking the app).
     private var trackedFocus: CGWindowID?
     private var liveReadAgain = false
@@ -449,6 +457,7 @@ final class WindowManager {
         for (id, t) in lastResnap where now - t > 10 || windows[id] == nil { lastResnap.removeValue(forKey: id) }
         for (id, t) in dockPlacedAt where now - t > 10 { dockPlacedAt.removeValue(forKey: id) }
         for key in Array(docks.keys) where docks[key]?.isEmpty ?? true { docks.removeValue(forKey: key) }
+        for id in Array(proxyShownAt.keys) where !proxied.contains(id) { proxyShownAt.removeValue(forKey: id) }
     }
 
     // MARK: Saved layout
@@ -932,6 +941,7 @@ final class WindowManager {
     private func unmanage(_ id: CGWindowID, focusNeighbor: Bool) {
         pinned.remove(id)
         proxied.remove(id)
+        proxyShownAt.removeValue(forKey: id)
         pendingParks.removeValue(forKey: id)?.cancel()
         overlays.remove(id)
         snapshots.remove(id)
@@ -2146,10 +2156,9 @@ final class WindowManager {
         pendingParks.removeValue(forKey: w.id)?.cancel()
         if overlays.isShowing(w.id) {
             if case .frame(let r) = placement {
-                // Bring the real window back, and keep the stand-in over it for a moment:
-                // the window server shows the moved window a frame or two later.
+                // Bring the real window back, and keep the stand-in over it until it's there.
                 placeReal(w, placement, screen: screen, rowHeight: rowHeight)
-                overlays.handoff(w.id, to: r)
+                handOver(w, to: r)
                 return
             }
             overlays.hide(w.id)
@@ -2234,14 +2243,22 @@ final class WindowManager {
                 overlays.show(w.id, image: image, full: r, clipTop: hardTop,
                               trueColor: snapshots.isOnScreenCapture(w.id), stream: false, shadow: true, below: dragging)
                 proxied.insert(w.id)
+                proxyShownAt[w.id] = CACurrentMediaTime()
                 pendingParks.removeValue(forKey: w.id)?.cancel()
-                park(w, screen: screen, size: r.size)
+                placeReal(w, .frame(r), screen: screen, rowHeight: r.height)
                 Log.debug("proxy on \(w.id) \(w.appName)")
                 return true
             }
             // A fresh capture (requested as the motion started) replaces the warm-up picture.
             guard let image = snapshots.image(w.id, size: r.size) ?? overlays.currentImage(w.id) else { return false }
             overlays.show(w.id, image: image, full: r, clipTop: hardTop, stream: false, shadow: true, below: dragging)
+            if !w.parked {
+                if CACurrentMediaTime() - (proxyShownAt[w.id] ?? 0) >= Self.standInSettle {
+                    park(w, screen: screen, size: r.size)
+                } else {
+                    placeReal(w, .frame(r), screen: screen, rowHeight: r.height)
+                }
+            }
             return true
         case .overflow:
             // Becomes a regular top-edge peek (also a stand-in over a parked window).
@@ -2260,6 +2277,7 @@ final class WindowManager {
         let ids = strip.windowIDs.filter { proxied.contains($0) }
         guard !ids.isEmpty else { return }
         proxied.subtract(ids)
+        for id in ids { proxyShownAt.removeValue(forKey: id) }
         let p = params(screen)
         for item in strip.layout(p, scroll: strip.renderScrollY, minHeights: minHeights) where ids.contains(item.id) {
             guard let w = windows[item.id] else { continue }
@@ -2267,14 +2285,26 @@ final class WindowManager {
                 place(w, item.placement, screen: screen, rowHeight: item.rowHeight, hardTop: p.hardTop, clipBottom: p.clipBottom)
                 continue
             }
-            overlays.handoff(w.id, to: r, delay: 0.6)  // fallback if the app never answers
             placeReal(w, item.placement, screen: screen, rowHeight: item.rowHeight)
-            let id = w.id
-            writer.perform(pid: w.pid) { [weak self] in
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    guard let self, !self.proxied.contains(id) else { return }
-                    self.overlays.fadeOut(id)
-                }
+            handOver(w, to: r)
+        }
+    }
+
+    /// The real window is being moved back to `r` under its stand-in: the stand-in stays on
+    /// top, unclipped, until the app has applied the move (and the window server had a frame
+    /// to show it), then fades. A fixed delay was too short for slow apps (100 ms and more),
+    /// and the window vanished for a moment. Gives up waiting after 0.6 s.
+    private func handOver(_ w: ManagedWindow, to r: CGRect) {
+        overlays.handoff(w.id, to: r, delay: 0.6)
+        guard handingOver.insert(w.id).inserted else { return }
+        let id = w.id
+        writer.perform(pid: w.pid) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                guard let self else { return }
+                self.handingOver.remove(id)
+                // Not if it became a stand-in or a peek again meanwhile.
+                guard !self.proxied.contains(id), self.windows[id]?.parked == false else { return }
+                self.overlays.fadeOut(id)
             }
         }
     }
