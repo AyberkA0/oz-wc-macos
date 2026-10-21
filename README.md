@@ -50,6 +50,8 @@ The ▤ menu bar icon: toggle tiling, toggle tiling for this desktop, live captu
 
 ## Widths and rows
 
+- **Saved across restarts.** Each desktop's arrangement (rows, heights, widths, places in a row, scroll position, focus, and the windows docked around the zone) is written to `~/Library/Application Support/Oz/layout.json` whenever it changes and when Oz quits, and put back when Oz starts: windows are recognised by their id (the same while their app keeps running) or, after the app restarted, by app and title. Windows it doesn't know are added after them.
+
 - **Narrow a window with the mouse.** If it is alone in its row, the space beside it stays empty and the window stays where you left it: narrowed from the right it keeps its left edge, from the left it keeps its right edge, so you can place it anywhere in the row by its edges — or drag it by its title bar and drop it in the same row: it slides back into the row at the sideways place you dropped it. Keyboard width changes keep its place too (moving it left only as far as it needs to fit); back at full width it fills the row again.
 - To put windows side by side, drag one beside another (the vertical split line) or use `joinUp` / `joinDown` / `slurpIn`; rows are never merged on their own.
 - **Moving up/down** (`⌃⌥⇧ ↑/↓`, `moveUp`/`moveDown`): if the next row holds a single narrowed window and this one fits in the space beside it, it joins that row (on the side it's on) and the two share it; press again and it carries on, into a row of its own beyond. Otherwise the rows swap as before.
@@ -179,5 +181,4 @@ build/Oz.app/Contents/MacOS/OzWM msg setHeight 0.5
 - `MultitouchSupport` is a private framework; if a future macOS changes it, gestures may stop working (shortcuts keep working). The menu then shows "No trackpad found".
 - Apps with a minimum window size (some settings windows) make their row at least that tall.
 - Native full-screen windows are not tiled.
-- Widths and rows are not saved across restarts of Oz.
 - Log: `~/Library/Logs/OzWM.log` (`debug: true` for verbose output). Main-thread hitches are logged as `[stall]` with the code that caused them, slow apps as `[slow]`.

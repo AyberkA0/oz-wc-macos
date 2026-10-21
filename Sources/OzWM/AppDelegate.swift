@@ -34,7 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func shutdown() {
         gestures.stop()
-        if started { wm.restoreAll() }
+        if started {
+            wm.saveLayout()
+            wm.restoreAll()
+        }
         restoreWallpaperTinting()
     }
 

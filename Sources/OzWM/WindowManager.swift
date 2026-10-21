@@ -177,6 +177,11 @@ final class WindowManager {
     /// up through the desktop on screen right now: keyed by display, a desktop switch used the
     /// old desktop's area for a moment and windows jumped to the wrong width and back.
     private var areaBySpace: [SpaceID: CGRect] = [:]
+    /// Saved arrangements (by desktop) not applied yet: each is put back once, the first time
+    /// that desktop's windows are seen after Oz starts.
+    private var pendingRestore: [String: StripState] = LayoutStore.load()
+    private var lastSavedLayout: Data?
+    private var saveTimer: Timer?
     /// A double click just landed on this window's title bar; its app may zoom it.
     private var zoomClick: (id: CGWindowID, key: StripKey, frame: CGRect)?
     /// Floating windows the user took out of the strip (dragged out of the scroll area, a
@@ -300,6 +305,8 @@ final class WindowManager {
         overlays.liveFPS = settings.livePeekFPS
         setupSnapshots()
         scanAll(initial: true)
+        // Written when it changed: a few seconds of rearranging at most are lost to a crash.
+        saveTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.saveLayout() }
     }
 
     /// Put every hidden/shrunk window back on screen (on quit or when tiling is turned off).
@@ -337,6 +344,96 @@ final class WindowManager {
             }
         }
         return out
+    }
+
+    // MARK: Saved layout
+
+    private func describe(_ id: CGWindowID) -> WindowDescription? {
+        (windows[id] ?? floating[id]).map { WindowDescription(id: $0.id, app: $0.appName, bundleID: $0.bundleID, title: $0.title) }
+    }
+
+    /// Height of a strip's own viewport (its desktop may not be the one on screen).
+    private func viewportHeight(_ key: StripKey) -> CGFloat {
+        guard let screen = Geometry.screen(displayID: key.display) ?? NSScreen.main else { return 800 }
+        return scrollArea(screen, space: key.space).insetBy(dx: settings.outerGap, dy: settings.outerGap).height
+    }
+
+    /// Puts back the saved arrangement of every desktop whose windows are here now for the
+    /// first time since Oz started: rows, heights, widths and places, scroll, focus, and the
+    /// windows docked around the zone. Windows it doesn't know stay after them in their order.
+    /// Returns the strips it rearranged.
+    private func applyPendingRestores() -> Set<StripKey> {
+        guard !pendingRestore.isEmpty else { return [] }
+        let displays = Spaces.displays()
+        var done = Set<StripKey>()
+        for (key, strip) in strips {
+            guard let name = Spaces.persistentKey(key.space, displays: displays), let saved = pendingRestore[name] else { continue }
+            let candidates = strip.windowIDs.compactMap(describe)
+            // Docked windows first: they were picked up as tiled; take them out of the strip.
+            var used = Set<CGWindowID>()
+            var docked: [Int: [CGWindowID]] = [:]
+            for (region, list) in saved.docks {
+                guard let i = Int(region) else { continue }
+                for w in list {
+                    if let id = WindowMatcher.match(w, in: candidates, excluding: used) {
+                        used.insert(id)
+                        docked[i, default: []].append(id)
+                    }
+                }
+            }
+            let vh = viewportHeight(key)
+            let matched = strip.restore(saved, maxHeight: vh) { w, u in
+                WindowMatcher.match(w, in: candidates, excluding: u.union(used))
+            }
+            // None of its windows here yet (another desktop, read later): try again next scan.
+            guard !matched.isEmpty || !docked.isEmpty else { continue }
+            for id in docked.values.joined() {
+                guard let w = windows.removeValue(forKey: id) else { continue }
+                strip.remove(id)
+                floating[id] = w
+                manualFloat.insert(id)
+            }
+            if !docked.isEmpty { docks[key] = docked }
+            strip.scrollY = strip.clampScroll(strip.scrollY, viewportHeight: vh, gap: settings.gap)
+            strip.renderScrollY = strip.scrollY
+            pendingRestore[name] = nil
+            done.insert(key)
+            Log.info("restored desktop \(name): \(matched.count) tiled, \(docked.values.joined().count) docked")
+            if strip.isEmpty { strips.removeValue(forKey: key) }
+            layoutDocks(key)
+        }
+        return done
+    }
+
+    /// Writes every desktop's arrangement to disk if it changed (desktops not seen since the
+    /// start keep what was saved for them).
+    func saveLayout() {
+        guard enabled else { return }
+        let displays = Spaces.displays()
+        var desktops = pendingRestore
+        for (key, strip) in strips {
+            guard let name = Spaces.persistentKey(key.space, displays: displays) else { continue }
+            var state = strip.state(describe: describe)
+            for (region, ids) in docks[key] ?? [:] {
+                state.docks[String(region)] = ids.compactMap(describe).map {
+                    StripState.Window(id: $0.id, app: $0.app, bundleID: $0.bundleID, title: $0.title)
+                }
+            }
+            desktops[name] = state
+        }
+        for (key, regions) in docks where strips[key] == nil {
+            guard let name = Spaces.persistentKey(key.space, displays: displays) else { continue }
+            var state = StripState()
+            for (region, ids) in regions {
+                state.docks[String(region)] = ids.compactMap(describe).map {
+                    StripState.Window(id: $0.id, app: $0.app, bundleID: $0.bundleID, title: $0.title)
+                }
+            }
+            desktops[name] = state
+        }
+        guard let data = LayoutStore.encode(desktops), data != lastSavedLayout else { return }
+        lastSavedLayout = data
+        LayoutStore.write(data)
     }
 
     // MARK: Tiling per desktop
@@ -494,8 +591,11 @@ final class WindowManager {
         guard on != enabled else { return }
         if on {
             enabled = true
+            // Back as it was when tiling was turned off.
+            pendingRestore = LayoutStore.load()
             scanAll(initial: true)
         } else {
+            saveLayout()
             restoreAll()
             enabled = false
             strips.removeAll()
@@ -597,7 +697,8 @@ final class WindowManager {
         if initial, let fid = systemFocusedWindowID(), let (_, strip) = locate(fid) {
             strip.focused = fid
         }
-        for (key, strip) in strips where isVisible(key) {
+        let restored = applyPendingRestores()
+        for (key, strip) in strips where isVisible(key) && !restored.contains(key) {
             if let f = strip.focused, let screen = Geometry.screen(displayID: key.display) {
                 let vh = viewport(screen).height
                 strip.scrollY = strip.clampScroll(strip.scrollToReveal(f, viewportHeight: vh, gap: settings.gap),
@@ -1133,68 +1234,20 @@ final class WindowManager {
         emit?("windowCreated", info(w))
     }
 
-    /// Where in the strip a window dropped in the zone goes.
-    private enum ZoneSlot {
-        /// A row of its own just above the row holding this window (nil: after the last row).
-        case row(before: CGWindowID?)
-        /// In this window's row, on its right or left.
-        case beside(CGWindowID, right: Bool)
-    }
-
     /// The slot a window dragged to `p` (in a zone) would take, and the split line showing it:
     /// beside a window when the cursor is near its left or right edge, otherwise between the
     /// rows above or below the cursor. nil outside a zone, or when it would land where it is.
-    private func zoneSlot(at p: CGPoint, dragging id: CGWindowID) -> (key: StripKey, slot: ZoneSlot, line: CGRect)? {
+    private func zoneSlot(at p: CGPoint, dragging id: CGWindowID) -> (key: StripKey, slot: DropSlot, line: CGRect)? {
         guard let (key, screen) = dropTarget(p) else { return nil }
-        let vp = viewport(screen), gap = settings.gap, t = InsertionLine.thickness
-        guard let strip = strips[key], !strip.isEmpty else {
-            return (key, .row(before: nil), CGRect(x: vp.minX, y: vp.minY, width: vp.width, height: t))
-        }
-        var frames: [CGWindowID: CGRect] = [:]
-        for item in strip.layout(params(screen), scroll: strip.renderScrollY, minHeights: minHeights) {
-            frames[item.id] = item.frame
-        }
-        let rows = strip.rows
-        func top(_ i: Int) -> CGFloat { vp.minY - strip.renderScrollY + strip.rowTop(i, gap: gap) }
-        func bottom(_ i: Int) -> CGFloat { top(i) + rows[i].height }
-        let rowX0 = rows.indices.compactMap { rows[$0].windows.compactMap { frames[$0]?.minX }.min() }.min() ?? vp.minX
-        let rowX1 = rows.indices.compactMap { rows[$0].windows.compactMap { frames[$0]?.maxX }.max() }.max() ?? vp.maxX
-        // The row under the cursor (or the nearest one).
-        let r = rows.indices.first { p.y < bottom($0) + gap / 2 } ?? rows.count - 1
-        let own = strip.locate(id)
-        let visibleTop = vp.minY, visibleBottom = vp.maxY
-
-        // Near a window's left/right edge: beside it.
-        if let c = rows[r].windows.firstIndex(where: { frames[$0].map { p.x >= $0.minX - gap && p.x <= $0.maxX + gap } ?? false }),
-           let f = frames[rows[r].windows[c]], rows[r].windows[c] != id {
-            let edge = min(f.width * 0.25, 160)
-            let right: Bool? = p.x < f.minX + edge ? false : p.x > f.maxX - edge ? true : nil
-            if let right {
-                // Already right there (the neighbour on that side is the dragged window): no move.
-                let neighbour = right ? c + 1 : c - 1
-                let noop = own.map { $0.row == r && $0.col == neighbour } ?? false
-                if !noop {
-                    let x = right ? f.maxX + gap / 2 : f.minX - gap / 2
-                    let y0 = max(top(r), visibleTop), y1 = min(bottom(r), visibleBottom)
-                    return (key, .beside(rows[r].windows[c], right: right),
-                            CGRect(x: (x - t / 2).rounded(), y: y0, width: t, height: max(y1 - y0, t)))
-                }
-            }
-        }
-
-        // Between rows: above this row when the cursor is in its upper half, else below it.
-        let index = p.y < (top(r) + bottom(r)) / 2 ? r : r + 1
-        func boundary(_ k: Int) -> CGFloat { k == 0 ? top(0) - gap / 2 : bottom(k - 1) + gap / 2 }
-        // Landing where it already is: no line.
-        if let own, rows[own.row].windows.count == 1, index == own.row || index == own.row + 1 { return nil }
-        let anchor = index < rows.count ? rows[index].windows.first { $0 != id } : nil
-        let clampedY = min(max(boundary(index), visibleTop + t / 2), visibleBottom - t / 2)
-        return (key, .row(before: anchor), CGRect(x: rowX0, y: (clampedY - t / 2).rounded(), width: rowX1 - rowX0, height: t))
+        let strip = strips[key] ?? Strip()
+        guard let r = strip.dropSlot(at: p, dragging: id, params: params(screen), minHeights: minHeights,
+                                     lineThickness: InsertionLine.thickness) else { return nil }
+        return (key, r.slot, r.line)
     }
 
     /// Puts a window (tiled, or just made tiled) into `slot` of the strip and slides it there
     /// from `frame`, where it was let go.
-    private func insert(_ w: ManagedWindow, into key: StripKey, slot: ZoneSlot, from frame: CGRect, height: CGFloat? = nil) {
+    private func insert(_ w: ManagedWindow, into key: StripKey, slot: DropSlot, from frame: CGRect, height: CGFloat? = nil) {
         let strip = self.strip(key)
         beginTransition(key)
         var h = height ?? frame.height
@@ -1304,23 +1357,10 @@ final class WindowManager {
     /// zone; `inBand` false in its middle; velocity 0 where it can't scroll further.
     private func dragScrollVelocity(at p: CGPoint) -> (key: StripKey, velocity: CGFloat, inBand: Bool)? {
         guard let (key, screen) = dropTarget(p), let strip = strips[key] else { return nil }
-        let zone = scrollArea(screen), vh = viewport(screen).height
-        let band = max(60, zone.height * 0.15)
-        let depth: CGFloat, dir: CGFloat
-        if p.y - zone.minY < band {
-            depth = 1 - (p.y - zone.minY) / band
-            dir = -1
-        } else if zone.maxY - p.y < band {
-            depth = 1 - (zone.maxY - p.y) / band
-            dir = 1
-        } else {
-            return (key, 0, false)
-        }
-        let maxScroll = strip.maxScroll(viewportHeight: vh, gap: settings.gap)
-        if (dir < 0 && strip.renderScrollY <= 0) || (dir > 0 && strip.renderScrollY >= maxScroll) { return (key, 0, true) }
-        // A gentle start at the band's inner border, quick at the very edge.
-        let speed = vh * (0.15 + 1.35 * pow(min(max(depth, 0), 1), 1.5))
-        return (key, dir * speed, true)
+        let vh = viewport(screen).height
+        let v = DragScroll.velocity(cursorY: p.y, zone: scrollArea(screen), viewportHeight: vh, scroll: strip.renderScrollY,
+                                    maxScroll: strip.maxScroll(viewportHeight: vh, gap: settings.gap))
+        return (key, v.velocity, v.inBand)
     }
 
     /// Starts scrolling once the cursor has rested in an edge band for a moment, and only if
