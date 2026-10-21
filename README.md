@@ -246,7 +246,7 @@ build/Oz.app/Contents/MacOS/OzWM msg setHeight 0.5
 - **Smooth scrolling** (`smoothScroll`, on by default). While the strip moves, every window is drawn from a snapshot and the real windows are moved once when the motion ends, so scrolling stays smooth regardless of how quickly applications respond. Window contents are static during the motion. Oz keeps recent snapshots of visible windows so the next swipe can use them from its first frame. When disabled, only windows of slow applications are drawn this way.
 - **Slow applications.** Some applications take 50–120 ms to apply a move. Oz tracks each application's recent worst move time; windows of applications above `slowAppThreshold` (30 ms) are drawn from a capture while the strip moves (`slowAppProxy`).
 - **Wallpaper tinting.** macOS tints window backgrounds with the colour of the desktop picture behind them. A window moved off screen loses that tint, so its capture would look greyer than the window itself. Oz turns off System Settings › Appearance › *Allow wallpaper tinting in windows* while it runs and restores your setting when it quits; as a fallback it corrects the tint difference in live captures.
-- **Long-running use.** Snapshots of windows that are not on screen are released after a minute, hidden overlays hold no images, data about closed windows is discarded, and the log is rotated at 2 MB. When idle, Oz does essentially no work.
+- **Long-running use.** Hidden overlays hold no images, snapshots and other data about closed windows are discarded, and the log is rotated at 2 MB. When idle, Oz does essentially no work.
 - Scrolling does not change focus; focus changes when you click a window or use a focus command.
 
 ## Limitations

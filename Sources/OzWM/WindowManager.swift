@@ -430,22 +430,13 @@ final class WindowManager {
 
     // MARK: Housekeeping
 
-    /// Keeps a long-running Oz small: drops snapshots of windows that aren't on screen and
-    /// haven't been needed for a minute, empty strips left by looking at a desktop, and the
-    /// per-strip and per-window bookkeeping of things that are gone.
+    /// Keeps a long-running Oz small: drops empty strips left by looking at a desktop and the
+    /// per-strip and per-window bookkeeping of things that are gone. (Snapshots of windows
+    /// stay: they are freed when their window closes.)
     private func housekeeping() {
         guard enabled, !isMoving, !overviewActive else { return }
         let visible = visibleKeys()
-        var keep = proxied
-        for (key, screen) in visible {
-            guard let strip = strips[key] else { continue }
-            for item in strip.layout(params(screen), scroll: strip.renderScrollY, minHeights: minHeights) {
-                if case .park = item.placement { continue }
-                keep.insert(item.id)
-            }
-        }
-        for id in windows.keys where overlays.isShowing(id) { keep.insert(id) }
-        snapshots.evict(olderThan: 60, keeping: keep)
+        snapshots.forgetOldFailures()
 
         for (key, strip) in strips where strip.isEmpty && visible[key] == nil && animations[key] == nil {
             strips.removeValue(forKey: key)

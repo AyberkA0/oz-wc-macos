@@ -98,12 +98,9 @@ final class SnapshotCache {
         failedAt.removeValue(forKey: id)
     }
 
-    /// Drops snapshots not used for `age` seconds, except those of `keep` (windows on screen
-    /// or drawn by a stand-in): pictures of windows far away or on other desktops are the bulk
-    /// of Oz's memory, and are taken again when needed.
-    func evict(olderThan age: CFTimeInterval, keeping keep: Set<CGWindowID>) {
+    /// Forgets capture failures older than a minute (the window may be capturable again).
+    func forgetOldFailures() {
         let now = CACurrentMediaTime()
-        for (id, e) in entries where !keep.contains(id) && now - e.time > age { entries.removeValue(forKey: id) }
         for (id, t) in failedAt where now - t > 60 { failedAt.removeValue(forKey: id) }
     }
 
