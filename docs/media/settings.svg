@@ -35,7 +35,7 @@
   <circle cx="400" cy="160" r="26" fill="#ffffff" fill-opacity="0.22" stroke="#fff" stroke-opacity="0.8" stroke-width="1.5"/>
   <polygon points="392,148 392,172 413,160" fill="#ffffff"/>
   <text x="400" y="232" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif"
-        font-size="30" font-weight="700" fill="#ffffff">The Wizard&#8217;s control room</text>
+        font-size="30" font-weight="700" fill="#ffffff">Settings</text>
   <text x="400" y="266" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif"
         font-size="18" fill="#ffeeb8">the Settings window</text>
   <text x="400" y="296" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, monospace"

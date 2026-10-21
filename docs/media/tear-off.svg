@@ -35,7 +35,7 @@
   <circle cx="400" cy="160" r="26" fill="#ffffff" fill-opacity="0.22" stroke="#fff" stroke-opacity="0.8" stroke-width="1.5"/>
   <polygon points="392,148 392,172 413,160" fill="#ffffff"/>
   <text x="400" y="232" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif"
-        font-size="30" font-weight="700" fill="#ffffff">Tear off a tab</text>
+        font-size="30" font-weight="700" fill="#ffffff">Tearing off a tab</text>
   <text x="400" y="266" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif"
         font-size="18" fill="#ffeeb8">it lands where you drop it</text>
   <text x="400" y="296" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, monospace"

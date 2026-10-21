@@ -1,19 +1,16 @@
 <p align="center">
-  <img src="docs/media/banner.svg" alt="Oz — a tiling window manager for macOS, with the Emerald City at the end of the yellow brick road" width="100%">
+  <img src="docs/media/banner.svg" alt="Oz, a tiling window manager for macOS" width="100%">
 </p>
 
 <p align="center">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-1c8a5c?style=flat-square&logo=apple&logoColor=white">
   <img alt="Swift 5.9" src="https://img.shields.io/badge/Swift-5.9-f2bd3a?style=flat-square&logo=swift&logoColor=white">
-  <img alt="Trackpad gestures" src="https://img.shields.io/badge/three--finger-swipe-7fd6a3?style=flat-square">
-  <img alt="Liquid Glass" src="https://img.shields.io/badge/Liquid-Glass-d8ffe9?style=flat-square">
+  <img alt="Trackpad gestures" src="https://img.shields.io/badge/trackpad-three--finger%20swipe-7fd6a3?style=flat-square">
 </p>
 
-<p align="center"><b><i>There's no place like a tidy desktop.</i></b></p>
+# Oz
 
-**Oz** is a **vertically scrolling** tiling window manager for macOS, inspired by [PaperWM](https://github.com/paperwm/PaperWM).
-
-Instead of squeezing every window onto the screen, Oz lays them one after another along an endless **vertical strip** — your own yellow brick road, one brick (window) at a time. The screen is a window onto that road: **swipe up and down with three fingers** to walk along it. Let go and it glides on, settling on a window edge when it ends near one.
+**Oz is a scrolling tiling window manager for macOS.** Instead of shrinking every window to fit the screen, it places them one after another on an endless **vertical strip** and treats the screen as a view onto that strip. Every window keeps a usable size; you move along the strip by **swiping up and down with three fingers**, and it settles on a window edge when you let go.
 
 ```
 ┌──────────── screen ───────────┐
@@ -21,176 +18,182 @@ Instead of squeezing every window onto the screen, Oz lays them one after anothe
 │ │        Terminal           │ │ ← focused
 │ └───────────────────────────┘ │
 │ ┌────────────┐ ┌────────────┐ │
-│ │   Safari   │ │   Notes    │ │ ← two panels in one row
+│ │   Safari   │ │   Notes    │ │ ← two windows sharing a row
 │ └────────────┘ └────────────┘ │
 └───────────────────────────────┘
   ┌───────────────────────────┐
-  │          Xcode            │   ← further down the road: three fingers up brings it in
+  │          Xcode            │   ← below the screen; swipe up to bring it in
   └───────────────────────────┘
   ┌───────────────────────────┐
   │          Mail             │
   └───────────────────────────┘
 ```
 
-<p align="center"><img src="docs/media/swipe.svg" alt="Three-finger swipe scrolling the strip" width="720"></p>
+<p align="center"><img src="docs/media/swipe.svg" alt="Scrolling the strip with a three-finger swipe" width="720"></p>
 
-### 🗺️ A map of Oz
+**Highlights**
 
-- [🟡 Follow the Yellow Brick Road](#-follow-the-yellow-brick-road) — install and first launch
-- [👣 Walking the road](#-walking-the-road) — the strip, rows, widths, gestures
-- [💚 The Emerald City](#-the-emerald-city) — the Oz zone and the land around it
-- [👠 The Ruby Slippers](#-the-ruby-slippers) — shortcuts
-- [🔮 The Wizard's control room](#-the-wizards-control-room) — settings
-- [📜 The Wizard's spellbook](#-the-wizards-spellbook) — `config.js`
-- [🎭 Pay no attention to the man behind the curtain](#-pay-no-attention-to-the-man-behind-the-curtain) — how it works
-- [🦁 Lions and tigers and bears](#-lions-and-tigers-and-bears) — known limitations
+- Smooth three-finger scrolling with momentum, independent of how fast apps respond.
+- Rows that hold one window or several side by side, with keyboard and mouse control over heights and widths.
+- An optional **Oz zone**: the strip can occupy only part of the screen (for example the right half), with the rest tiled into fixed regions.
+- Drag and drop: split lines show exactly where a window will land; tabs torn off into new windows land where you drop them.
+- Per-desktop settings, undo, and layouts that survive restarts.
+- Configured from a Settings window or a JavaScript file.
+
+## Contents
+
+- [Installation](#installation)
+- [Using the strip](#using-the-strip)
+- [The Oz zone](#the-oz-zone)
+- [Keyboard shortcuts](#keyboard-shortcuts)
+- [Settings](#settings)
+- [Configuration file](#configuration-file)
+- [How it works](#how-it-works)
+- [Limitations](#limitations)
 
 <p align="center"><img src="docs/media/road.svg" alt="" width="100%"></p>
 
-## 🟡 Follow the Yellow Brick Road
+## Installation
 
-You'll need macOS 14+ and Xcode / Swift 5.9+. Then, brick by brick:
+Requires macOS 14 or later and Xcode / Swift 5.9 or later.
 
 ```bash
-make run        # builds build/Oz.app and starts it
-make install    # copies it to ~/Applications/Oz.app and starts it
-make test       # unit tests
-make stop       # quits the running Oz
+make run        # build build/Oz.app and start it
+make install    # copy it to ~/Applications/Oz.app and start it
+make test       # run the unit tests
+make stop       # quit the running Oz
 ```
 
-**🧱 Brick one — Accessibility.** System Settings › Privacy & Security › Accessibility › turn on *Oz*. Oz starts the moment it's allowed.
+On first launch:
 
-**🧱 Brick two — the trackpad.** If the three-finger vertical swipe still belongs to Mission Control, Oz asks to borrow it. With *Apply*:
+1. **Accessibility.** Enable Oz in System Settings › Privacy & Security › Accessibility. Oz starts as soon as the permission is granted.
+2. **Trackpad.** If the three-finger vertical swipe is still assigned to Mission Control, Oz offers to take it over. If you choose *Apply*:
+   - three fingers up/down scroll the strip;
+   - a three-finger double tap opens Mission Control;
+   - Mission Control also remains on four fingers up and F3, and App Exposé on four fingers down;
+   - menu bar › *Trackpad: Restore macOS Gestures* (or `scripts/trackpad-gestures.sh restore`) reverts the change.
 
-- three fingers up/down → **Oz walks the strip**
-- **three-finger double tap → Mission Control** (toggles it, like the Mission Control key)
-- Mission Control also stays on four fingers up and F3; App Exposé on four fingers down
-- to give it back: menu bar › *Trackpad: Restore macOS Gestures* (or `scripts/trackpad-gestures.sh restore`)
+   If the change doesn't take effect immediately, set System Settings › Trackpad › More Gestures › Mission Control to **Swipe Up with Four Fingers**.
+3. **Screen Recording** (optional). Needed for windows to slide off the top edge (see [How it works](#how-it-works)). Without it, Oz shrinks such windows instead.
 
-If it doesn't take effect right away, set System Settings › Trackpad › More Gestures › Mission Control to **"Swipe Up with Four Fingers"** (same thing).
+> **Building from source:** with an ad-hoc signature, every build changes the code signature and macOS revokes the Accessibility permission. Run `./scripts/create-signing-cert.sh` once to add a self-signed "Oz Local Signing" identity to your login keychain; `make app` then uses it and permissions persist across rebuilds (`SIGN_ID=...` selects another identity).
 
-**🧱 Brick three — Screen Recording** (optional). Lets windows slide off the top edge (see [behind the curtain](#-pay-no-attention-to-the-man-behind-the-curtain)). Without it Oz shrinks them instead.
-
-> **🔧 Developer's note:** with an ad-hoc signature every build changes the code signature and macOS forgets the Accessibility permission. Run `./scripts/create-signing-cert.sh` once: it adds a self-signed "Oz Local Signing" identity to your login keychain, `make app` uses it automatically, and the permissions survive rebuilds (`SIGN_ID=...` for another identity).
-
-The ▤ menu bar icon is your hot-air balloon: toggle tiling (everywhere or just this desktop), live capture, smooth scrolling, the Emerald City's size, Settings, retile, edit/reload the config, open the log, trackpad setup, quit. When Oz quits, it brings every window it hid back on screen — nobody gets left in Oz.
+The menu bar icon provides: tiling on/off (globally or for the current desktop), live capture, smooth scrolling, the Oz zone, Settings, retile, editing and reloading the configuration file, the log, trackpad setup, and quit. When Oz quits, it returns every window it had moved off screen.
 
 <p align="center"><img src="docs/media/road.svg" alt="" width="100%"></p>
 
-## 👣 Walking the road
+## Using the strip
 
 ### Gestures
 
 | Gesture | Action |
 |---|---|
-| Three fingers up/down | Walk the strip freely; on release it glides with your speed and settles on a window edge (top or bottom) when it ends near one. Focus doesn't change (`swipe.focus: true` to focus the top window). `snap: "always"` for panel-by-panel scrolling. |
+| Three fingers up/down | Scroll the strip. On release it continues with your speed and settles on a window edge when it stops near one. Scrolling does not change focus (`swipe.focus: true` focuses the top window); `snap: "always"` scrolls one window at a time. |
 | Three-finger double tap | Mission Control (configurable) |
-| Three fingers left/right | Left to macOS (switching Spaces) |
+| Three fingers left/right | Handled by macOS (switching desktops) |
 
-If the road runs the wrong way, set `swipe.natural: false`. While it moves, a thin bar along the zone's right edge shows how much of the road is in view and where you are on it; it fades a moment after you stop.
+To reverse the scroll direction, set `swipe.natural: false`. While the strip moves, a thin bar along the right edge shows the visible portion and position; it fades out shortly after scrolling stops.
 
-When Oz opens Mission Control or App Exposé (double tap, `⌃⌥ m`, `⌃⌥⇧ m`) it first brings the windows waiting further down the road onto the screen, so the overview shows them at a normal size, and walks them back when it closes. Opened another way (four-finger swipe, the Mission Control key) the overview sees them where they wait and draws them small.
+When Oz opens Mission Control or App Exposé (double tap, `⌃⌥ m`, `⌃⌥⇧ m`), it first brings off-screen windows onto the screen so the overview shows them at a normal size, and returns them to the strip when the overview closes. When the overview is opened another way (four-finger swipe, the Mission Control key), off-screen windows appear small.
 
-<p align="center"><img src="docs/media/mission-control.svg" alt="Mission Control showing every window at full size" width="720"></p>
+<p align="center"><img src="docs/media/mission-control.svg" alt="Mission Control with every window at full size" width="720"></p>
 
 ### Rows and widths
 
-- **Narrow a window with the mouse.** Alone in its row, the space beside it stays empty and the window stays where you left it: narrowed from the right it keeps its left edge, from the left its right edge, so you can place it anywhere in the row by its edges — or drag it by its title bar and drop it in the same row: it slides back in at the sideways place you dropped it. Keyboard width changes keep its place too (moving it left only as far as it needs to fit); back at full width it fills the row again.
-- **Side by side:** drag a window beside another (the vertical split line, below) or use `joinUp` / `joinDown` / `slurpIn`. Rows are never merged on their own.
-- **Moving up/down** (`⌃⌥⇧ ↑/↓`): if the next row holds a single narrowed window and this one fits beside it, it joins that row (on the side it's on) and the two share it; press again and it carries on, into a row of its own beyond. Otherwise the rows swap.
-- From the keyboard, in a single-window row: `cycleWidth` (`⌃⌥ w`) cycles 1/3 → 1/2 → 2/3 → full, `resizeWidth` (`⌃⌥ , / .`) narrows/widens in steps, `equalizeRow` (`⌃⌥ =`) goes back to full width.
-- While you resize a window, its neighbours make room live.
-- Keyboard moves (moves, joins, width/height changes, floating) slide the windows to their new places over `animationDuration` instead of jumping — rows slide in and out of view too.
+- **Resizing with the mouse.** When a window is alone in its row and you narrow it, the rest of the row stays empty and the window stays where you left it: narrowed from the right it keeps its left edge, from the left it keeps its right edge. You can also drag it by its title bar and drop it within the same row to move it sideways. Keyboard width changes preserve its position (shifting it left only as far as needed to fit); at full width it fills the row again.
+- **Side by side.** Drag a window next to another (see [split lines](#split-lines)) or use `joinUp`, `joinDown` or `slurpIn`. Rows are never merged automatically.
+- **Moving up and down** (`⌃⌥⇧ ↑/↓`). If the adjacent row contains a single narrowed window and the moving window fits beside it, the window joins that row on the side it is already on; pressing again continues past it into a row of its own. Otherwise the rows swap.
+- **Keyboard widths** in a single-window row: `cycleWidth` (`⌃⌥ w`) cycles 1/3 → 1/2 → 2/3 → full, `resizeWidth` (`⌃⌥ ,` / `⌃⌥ .`) adjusts in steps, `equalizeRow` (`⌃⌥ =`) restores full width.
+- While you resize a window, its neighbours adjust live.
+- Keyboard rearrangements (moves, joins, width and height changes, floating) are animated over `animationDuration`, including rows entering and leaving the view.
 
-### Click your heels three times
+### Full screen, undo and saved layouts
 
-- **Double click a title bar** (macOS zoom): the window fills the whole usable screen — over the Emerald City and the land around it — while the rest of the strip waits behind it. Double click again and it slides back into its place. Same as `toggleMaximize` (`⌃⌥⇧ f`). Rearranging the strip puts it back first.
-- **Undo** (`⌃⌥ z`): puts the strip back as it was before its last change — keyboard moves and sizes, drags and drops, mouse resizes, a window dragged out of the zone (it comes home) — up to 20 steps, sliding the windows back.
-- **Saved across restarts.** Each desktop's arrangement (rows, heights, widths, places in a row, scroll position, focus, and the windows docked around the zone) is written to `~/Library/Application Support/Oz/layout.json` whenever it changes and when Oz quits, and put back when Oz starts. Windows are recognised by their id (the same while their app keeps running) or, after the app restarted, by app and title; ones it doesn't know are added after them.
+- **Double-click a title bar** (macOS zoom): the window fills the entire usable screen while the rest of the strip stays in place behind it. Double-click again to return it to its position. The same is available as `toggleMaximize` (`⌃⌥⇧ f`). Rearranging the strip restores the window first.
+- **Undo** (`⌃⌥ z`) reverts the strip to its state before the last change: keyboard moves and resizes, drag and drop, mouse resizes, or a window dragged out of the zone (which returns to the strip). Up to 20 steps per strip.
+- **Saved layouts.** Each desktop's arrangement (rows, heights, widths, positions within rows, scroll position, focus, and windows placed around the zone) is saved to `~/Library/Application Support/Oz/layout.json` whenever it changes and when Oz quits, and restored on the next launch. Windows are matched by their window ID (stable while the app keeps running) or, if the app was restarted, by application and title. Unrecognised windows are appended after the restored ones.
 
-<p align="center"><img src="docs/media/maximize.svg" alt="Double clicking a title bar to fill the screen and back" width="720"></p>
+<p align="center"><img src="docs/media/maximize.svg" alt="Double-clicking a title bar to fill the screen" width="720"></p>
 
 ### Tiling per desktop
 
-Each Mission Control desktop can be tiled or left to roam free: `⌃⌥⇧ esc` (`toggleSpaceTiling`) or menu bar › *Tile This Desktop*. On a free desktop Oz leaves every window where it is (hidden ones come back on screen) and ignores its gestures and shortcuts; tiling it again picks its windows up. The choice is remembered across restarts. A window moved to a free desktop is let go.
+Tiling can be turned on or off for each desktop individually with `⌃⌥⇧ esc` (`toggleSpaceTiling`) or menu bar › *Tile This Desktop*. On a desktop with tiling off, Oz leaves all windows where they are (returning any it had moved off screen) and ignores gestures and shortcuts there. The setting is remembered across restarts, and a window moved to such a desktop is released.
 
 <p align="center"><img src="docs/media/road.svg" alt="" width="100%"></p>
 
-## 💚 The Emerald City
+## The Oz zone
 
-By default the road runs across the whole screen. But you can give it a city of its own — the **Oz zone** — and leave the rest of the screen to the land of Oz around it.
+By default the strip spans the whole screen. The **Oz zone** limits it to part of the screen and leaves the rest for windows that should stay in place.
 
-Menu bar › *Set Scroll Area…* (or `⌃⌥⇧ a`): the windows hide behind the wallpaper, the rest of the screen dims, and the hatched area can be resized by its edges and corners, moved by dragging inside it, or drawn anew (presets: left/right half, left/right two thirds, full). Return saves, Esc cancels. The strip then lives in the zone only: windows are cut off at its top and bottom edges the same way they slide off the top of the screen. Each desktop has its own city, remembered across restarts; *Reset Scroll Area* gives it the whole screen again.
+Choose menu bar › *Set Scroll Area…* (or `⌃⌥⇧ a`). The editor hides your windows behind the desktop picture and dims everything outside the selected area. Resize the area by its edges and corners, drag it to move it, draw a new one, or use a preset (left or right half, left or right two thirds, full screen). Return saves, Esc cancels. Windows in the strip are then clipped at the zone's top and bottom edges in the same way they slide off the top of the screen. Each desktop has its own zone, remembered across restarts; *Reset Scroll Area* returns to the full screen.
 
-<p align="center"><img src="docs/media/zone.svg" alt="Setting the Oz zone with the editor" width="720"></p>
+<p align="center"><img src="docs/media/zone.svg" alt="The Oz zone editor" width="720"></p>
 
-### Split lines in the city
+### Split lines
 
-Drag a window over the zone and a glowing line shows exactly where it will go:
+While you drag a window over the zone, a highlighted line shows where it will be placed:
 
-- a **horizontal line** between two rows — above the row under the cursor when it's in the row's upper half, below it otherwise;
-- a **vertical line** beside a window when the cursor is near its left or right edge — then they share the row.
+- a **horizontal line** between two rows: above the row under the cursor when the cursor is in its upper half, below it otherwise;
+- a **vertical line** beside a window when the cursor is near its left or right edge, in which case the two share the row.
 
-Let go and it slides into that slot. This works for windows already in the strip too, so you can rearrange the road by dragging. No line means it would stay where it is. To reach rows out of view, rest the cursor in the band along the zone's top or bottom edge (15% of its height): after a moment the road scrolls that way, faster the closer you are to the edge. It only arms once the drag has been in the middle of the zone, so grabbing a title bar at the top doesn't send you flying.
+Release to move the window into that slot. This also applies to windows already in the strip, so the strip can be reordered by dragging. If no line appears, the window would return to its current position. To reach rows outside the view, hold the cursor in the band along the zone's top or bottom edge (15% of its height): the strip starts scrolling after a short delay, faster closer to the edge. Scrolling only becomes available once the drag has passed through the middle of the zone, so picking up a window by its title bar near the top does not trigger it.
 
-<p align="center"><img src="docs/media/split-lines.svg" alt="Dragging a window between rows with split lines" width="720"></p>
+<p align="center"><img src="docs/media/split-lines.svg" alt="Dragging a window between rows" width="720"></p>
 
-### The land of Oz around it
+### Windows around the zone
 
-With a zone set, the rest of the screen is free for windows that stay put:
+With a zone set, the remaining screen space holds windows that do not scroll:
 
-- **Drag a window out** of the zone (by its title bar): it leaves the strip and stays where you dropped it, untouched by scrolling. The strip closes the gap.
-- **Tear a tab off** (Chrome, Safari, Finder, Terminal…) and drop it outside the zone: the new window stays there. Dropped inside, it joins the strip.
-- **Regions.** The land around the city is divided into rectangles — one per side of the zone wide enough for a window (150 pt), as few as possible, the corners going to whichever side makes the longest one. A window dropped outside the zone is tiled in the region under the cursor: alone it fills it; if a window is already there, the region is split in half along its long side (stacked in a tall region, side by side in a wide one) and the new window takes the half where the cursor is. When one leaves, the rest close the gap; when the city is resized, they move to the region that now holds them.
-- **Coming home.** Drag a window back into the zone and it joins the strip where the split line shows. The same goes for a window floated with `toggleFloat`; windows that float because of a rule or a fixed size stay floating.
+- **Dragging a window out** of the zone removes it from the strip; the strip closes the gap.
+- **Tearing off a tab** (Chrome, Safari, Finder, Terminal and others) outside the zone keeps the new window there; inside the zone, it joins the strip.
+- **Regions.** The space around the zone is divided into rectangles: one for each side of the zone wide enough to hold a window (150 pt), using as few rectangles as possible and assigning each corner to the side that yields the longest rectangle. A window dropped outside the zone is tiled into the region under the cursor. Alone, it fills the region; if the region is already occupied, the region is split along its longer side (stacked in a tall region, side by side in a wide one) and the new window takes the half under the cursor. When a window leaves, the others expand to fill the space; when the zone is resized, windows move to the region that now contains them.
+- **Returning to the strip.** Dragging a window back into the zone inserts it where the split line indicates. This also applies to windows floated with `toggleFloat`; windows that float because of a rule or a fixed size remain floating.
+
+While you drag, a translucent panel (Liquid Glass on macOS 26 and later, frosted glass on earlier versions) previews where the window will land: its slot in a region, or the zone itself when it would join the strip.
 
 <p align="center"><img src="docs/media/regions.svg" alt="Windows tiled in the regions around the zone" width="720"></p>
-<p align="center"><img src="docs/media/tear-off.svg" alt="Tearing a tab off and dropping it outside the zone" width="720"></p>
-
-### 🫧 Glinda's bubble
-
-While you drag, a pane of **Liquid Glass** (frosted glass before macOS 26) floats in to show where the window will land: its slot in a region, or the city itself when it would join the strip. It stays out of the way while a tiled window is still inside the zone (it just goes back home) or while you resize by an edge.
+<p align="center"><img src="docs/media/tear-off.svg" alt="Tearing a tab off into a region" width="720"></p>
 
 <p align="center"><img src="docs/media/road.svg" alt="" width="100%"></p>
 
-## 👠 The Ruby Slippers
+## Keyboard shortcuts
 
-`⌃⌥` = ctrl+alt, `⇧` = shift. Keys are resolved in the active keyboard layout; the defaults are for a US layout (edit the `K` table at the top of the config for others, e.g. Turkish Q uses `ğ ü ö ç - .`).
+`⌃⌥` is Control-Option and `⇧` is Shift. Keys follow the active keyboard layout; the defaults assume a US layout. For other layouts, edit the `K` table at the top of the configuration file (for example, Turkish Q uses `ğ ü ö ç - .`).
 
 | Keys | Action | | Keys | Action |
 |---|---|---|---|---|
-| `⌃⌥ h j k l` / arrows | focus left/down/up/right | | `⌃⌥⇧ h j k l` / arrows | move the window |
-| `⌃⌥ 1…9` | go to row n | | `⌃⌥ home/end` | first/last row |
-| `⌃⌥ [` | **joinUp**: into the row above, side by side | | `⌃⌥ ]` | **joinDown**: into the row below |
-| `⌃⌥ i` | slurpIn: pull the window below into this row | | `⌃⌥ o` | barfOut: take it out of the row |
+| `⌃⌥ h j k l` / arrows | focus left / down / up / right | | `⌃⌥⇧ h j k l` / arrows | move the window |
+| `⌃⌥ 1…9` | go to row n | | `⌃⌥ home` / `end` | first / last row |
+| `⌃⌥ [` | join the row above (side by side) | | `⌃⌥ ]` | join the row below |
+| `⌃⌥ i` | pull the window below into this row | | `⌃⌥ o` | move the window out of its row |
 | `⌃⌥ w` / `⌃⌥⇧ w` | width share 1/3 → 1/2 → 2/3 | | `⌃⌥ =` | equalize the row |
 | `⌃⌥ ,` / `⌃⌥ .` | narrower / wider | | `⌃⌥⇧ ,` / `⌃⌥⇧ .` | shorter / taller |
-| `⌃⌥ s` | side by side: pull in + equalize | | `⌃⌥⇧ s` | this panel 2/3 |
+| `⌃⌥ s` | side by side: pull in and equalize | | `⌃⌥⇧ s` | this window 2/3 of the row |
 | `⌃⌥ r` / `⌃⌥⇧ r` | cycle height | | `⌃⌥ f` | toggle full height |
-| `⌃⌥⇧ f` | fill the screen / back into the strip | | `⌃⌥ z` | undo the last layout change |
+| `⌃⌥⇧ f` | fill the screen / return to the strip | | `⌃⌥ z` | undo the last layout change |
 | `⌃⌥ c` / `⌃⌥ t` | center / align to top | | `⌃⌥ u` / `⌃⌥ d` | scroll half a screen |
-| `⌃⌥⇧ pageup/pagedown` | start / end of the strip | | `⌃⌥ esc` | toggle floating |
-| `⌃⌥ return` | new Terminal | | `⌃⌥⇧ q` | close the window |
-| `⌃⌥ n` | move to the next screen | | `⌃⌥ m` / `⌃⌥⇧ m` | Mission Control / App Exposé |
+| `⌃⌥⇧ pageup` / `pagedown` | start / end of the strip | | `⌃⌥ esc` | toggle floating |
+| `⌃⌥ return` | new Terminal window | | `⌃⌥⇧ q` | close the window |
+| `⌃⌥ n` | move to the next display | | `⌃⌥ m` / `⌃⌥⇧ m` | Mission Control / App Exposé |
 | `⌃⌥⇧ t` | toggle tiling | | `⌃⌥⇧ esc` | toggle tiling for this desktop |
-| `⌃⌥⇧ c` | reload the config | | `⌃⌥⇧ a` | set this desktop's Oz zone |
-| `⌃⌥ /` | shortcut cheat sheet | | | |
+| `⌃⌥⇧ c` | reload the configuration | | `⌃⌥⇧ a` | edit this desktop's Oz zone |
+| `⌃⌥ /` | show a shortcut summary | | | |
 
 <p align="center"><img src="docs/media/road.svg" alt="" width="100%"></p>
 
-## 🔮 The Wizard's control room
+## Settings
 
-Menu bar › *Settings…* (⌘,) has the everyday levers: gaps, row width, new window height and position, animation length, swipe sensitivity and direction, how a swipe comes to rest and glides, smooth scrolling, how windows at an edge are drawn and the live capture rate, and the three-finger double tap. Changes apply at once and are kept apart from the config file, on top of it (the file stays as you wrote it); *Reset to Config* drops them. Shortcuts and window rules live in the spellbook.
+Menu bar › *Settings…* (⌘,) covers the common options: gaps, row width, height and position of new windows, animation length, swipe sensitivity and direction, how scrolling settles and glides, smooth scrolling, how windows at an edge are drawn, the live capture rate, and the three-finger double tap. Changes take effect immediately and are stored separately from the configuration file, layered on top of it; the file itself is not modified. *Reset to Config* discards them. Shortcuts and window rules are defined in the configuration file.
 
-Menu bar › *Keep Windows Alive (Live Capture)*: on, windows cut off at an edge are captured continuously (`livePeekFPS`), so video keeps playing; off, Oz takes one picture when a window starts to peek and shows that, so screen capture (and its indicator) only runs for a moment.
+Menu bar › *Keep Windows Alive (Live Capture)* controls how windows cut off at an edge are drawn. When enabled, they are captured continuously (`livePeekFPS`) so video keeps playing; when disabled, Oz captures a single image when a window reaches the edge, so screen capture (and the system's recording indicator) is active only briefly.
 
 <p align="center"><img src="docs/media/settings.svg" alt="The Settings window" width="720"></p>
 
 <p align="center"><img src="docs/media/road.svg" alt="" width="100%"></p>
 
-## 📜 The Wizard's spellbook
+## Configuration file
 
-`~/.config/oz/config.js` — plain JavaScript (JavaScriptCore), like PaperWM's `user.js`. Created from [examples/config.js](examples/config.js) on first launch and **reloaded automatically when you save**. To check your spells:
+`~/.config/oz/config.js` is plain JavaScript, evaluated with JavaScriptCore. It is created from [examples/config.js](examples/config.js) on first launch and **reloaded automatically when saved**. To validate it:
 
 ```bash
 make check-config
@@ -199,7 +202,7 @@ make check-config
 ```js
 oz.set({
   gap: 10, outerGap: 10, width: 1.0,
-  heights: [1/3, 1/2, 2/3, 1],      // cycleHeight presets (PaperWM: window_ratios)
+  heights: [1/3, 1/2, 2/3, 1],      // presets for cycleHeight
   defaultHeight: 1/2,
   newWindowPosition: "below",       // below | above | end | start
   animationDuration: 0.2,
@@ -213,7 +216,7 @@ oz.bind("hyper+return", function () { oz.exec("open -na Terminal"); });  // a fu
 oz.bind("ctrl+alt+1", function () { oz.setHeight(1/3); });
 
 oz.rule({ app: "Calculator", float: true });               // don't tile
-oz.rule({ app: /Code/, title: /Settings/, float: true });  // RegExp, arrays and functions work too
+oz.rule({ app: /Code/, title: /Settings/, float: true });  // RegExp, arrays and functions also work
 oz.rule({ bundleId: "com.apple.ActivityMonitor", height: 1/3 });
 oz.rule({ app: "Some App", ignore: true });                // leave it alone entirely
 
@@ -221,11 +224,11 @@ oz.on("windowCreated", function (w) { oz.log("new:", w.app, w.title); });
 oz.set({ doubleTap: { action: function () { oz.appExpose(); } } });
 ```
 
-**`oz` API:** `set`, `settings()`, `bind`, `rule`, `on` (`windowCreated`, `windowFocused`, `windowFloated`, `swipeEnded`, `spaceChanged`, `spaceTilingChanged`, `configLoaded`), `command(name, arg)`, a shortcut function per command (`oz.focusDown()`, `oz.setHeight(0.5)` …), `windows()`, `focusedWindow()`, `exec(cmd)` (in the background), `shell(cmd)` (returns the output), `notify(title, text)`, `log(...)`.
+**`oz` API:** `set`, `settings()`, `bind`, `rule`, `on` (events: `windowCreated`, `windowFocused`, `windowFloated`, `swipeEnded`, `spaceChanged`, `spaceTilingChanged`, `configLoaded`), `command(name, arg)`, one function per command (`oz.focusDown()`, `oz.setHeight(0.5)`, …), `windows()`, `focusedWindow()`, `exec(cmd)` (runs in the background), `shell(cmd)` (returns the output), `notify(title, text)`, `log(...)`.
 
 **Commands:** `focusUp/Down/Left/Right/First/Last`, `focusRow(n)`, `moveUp/Down/Left/Right/First/Last`, `slurpIn`, `barfOut`, `joinUp`, `joinDown`, `cycleWidth`, `cycleWidthBack`, `setWidth(ratio)`, `resizeWidth(±ratio)`, `equalizeRow`, `cycleHeight`, `cycleHeightBack`, `setHeight(ratio|pt)`, `resizeHeight(±ratio)`, `toggleFullHeight`, `center`, `alignTop`, `scrollUp(ratio)`, `scrollDown(ratio)`, `scrollBy(pt)`, `scrollToTop`, `scrollToBottom`, `toggleFloat`, `toggleMaximize`, `closeWindow`, `moveToNextScreen`, `undo`, `retile`, `toggleTiling`, `toggleSpaceTiling`, `editScrollArea`, `openSettings`, `reloadConfig`, `missionControl`, `appExpose`, `showDesktop`, `launchpad`.
 
-From the shell (skhd, Raycast, scripts…):
+Commands can also be sent from the shell (skhd, Raycast, scripts):
 
 ```bash
 build/Oz.app/Contents/MacOS/OzWM msg focusDown
@@ -234,35 +237,24 @@ build/Oz.app/Contents/MacOS/OzWM msg setHeight 0.5
 
 <p align="center"><img src="docs/media/road.svg" alt="" width="100%"></p>
 
-## 🎭 Pay no attention to the man behind the curtain
+## How it works
 
-| PaperWM | Oz |
-|---|---|
-| Horizontal strip of columns | Vertical strip of **rows** (`Sources/OzCore/Strip.swift`) |
-| Width cycling with `window_ratios` | Height cycling with `heights` |
-| slurp / barf (add to / remove from a column) | `slurpIn` / `barfOut`, `joinUp` / `joinDown` (panels side by side in a row) |
-| A strip per workspace | A strip per (Mission Control Space × display) |
-| `user.js` | `~/.config/oz/config.js` |
-| Touchpad swipe (GNOME) | Raw trackpad data from `MultitouchSupport.framework` (`Multitouch.swift`, `GestureRecognizer.swift`) |
+- **Window control.** Windows are moved and resized through the Accessibility API (`AXUIElement`); new, closed and focused windows are tracked with `AXObserver`. Moves are applied off the main thread on one queue per application, keeping only the most recent target per window, so a slow application never stalls scrolling. Layout runs once per display frame (`CADisplayLink`).
+- **Gestures.** Raw trackpad contacts are read from `MultitouchSupport.framework` and turned into swipes and taps by a small recognizer (`Multitouch.swift`, `GestureRecognizer.swift`).
+- **Structure.** One strip per desktop and display. The layout logic (the strip, drop slots, drag scrolling, regions around the zone, saved layouts) is in the `OzCore` module and covered by unit tests; `OzWM` connects it to macOS.
+- **Windows at the top edge.** macOS does not allow a window above the menu bar. With `topOverflow: "slide"` (the default), a window crossing the top edge is moved off screen and drawn in its place from a capture of its own content, clipped at the edge, so it slides out just as it does at the bottom. The partly visible window remains clickable and brings the real window back. With `livePeek`, the capture is refreshed at `livePeekFPS` (at 1x resolution) so video keeps playing. Captures start only when a window reaches the edge and stop after about two seconds without changes, so the system's recording indicator appears only while something is being captured. `topOverflow: "shrink"` (pinned and resized) and `"hide"` never capture. Windows entirely out of view are moved to the bottom-right corner of the screen.
+- **Smooth scrolling** (`smoothScroll`, on by default). While the strip moves, every window is drawn from a snapshot and the real windows are moved once when the motion ends, so scrolling stays smooth regardless of how quickly applications respond. Window contents are static during the motion. Oz keeps recent snapshots of visible windows so the next swipe can use them from its first frame. When disabled, only windows of slow applications are drawn this way.
+- **Slow applications.** Some applications take 50–120 ms to apply a move. Oz tracks each application's recent worst move time; windows of applications above `slowAppThreshold` (30 ms) are drawn from a capture while the strip moves (`slowAppProxy`).
+- **Wallpaper tinting.** macOS tints window backgrounds with the colour of the desktop picture behind them. A window moved off screen loses that tint, so its capture would look greyer than the window itself. Oz turns off System Settings › Appearance › *Allow wallpaper tinting in windows* while it runs and restores your setting when it quits; as a fallback it corrects the tint difference in live captures.
+- **Long-running use.** Snapshots of windows that are not on screen are released after a minute, hidden overlays hold no images, data about closed windows is discarded, and the log is rotated at 2 MB. When idle, Oz does essentially no work.
+- Scrolling does not change focus; focus changes when you click a window or use a focus command.
 
-- **The levers.** Windows are moved and resized through the Accessibility API (AXUIElement); new, closed and focused windows are tracked with AXObserver. Moves are applied off the main thread, one queue per app, keeping only the newest target per window, so a slow app never stalls scrolling. Layout runs once per display frame (CADisplayLink). The pure parts — the strip, drop slots, drag scrolling, the regions around the zone, saved layouts — live in `OzCore` and are unit-tested.
-- **Sliding off the top.** macOS won't let a window go above the menu bar. With `topOverflow: "slide"` (default), a window leaving the top edge is parked off screen and drawn in its place from a capture of its own content, cut at the edge, so it slides off just like at the bottom. The half-visible window stays clickable (brings the real one back); with `livePeek` it keeps updating at `livePeekFPS` (captured at 1x) so video keeps playing. Captures happen only when a window starts to peek and the live stream stops after ~2 s without changes, so macOS's purple screen-recording indicator only shows while something is actually being captured. `topOverflow: "shrink"` (pinned and shrunk) or `"hide"` never capture. Windows fully out of view are parked in the bottom-right corner (like AeroSpace).
-- **Smooth scrolling** (`smoothScroll`, default on). While the strip moves (swipes, animations), every window is drawn from a snapshot and the real windows are moved once, when the motion ends — smooth however slowly apps answer. Content stands still during the motion; Oz keeps a recent picture of the windows on screen so the next swipe has them from its first frame. Turned off, only slow apps are drawn this way.
-- **Slow apps.** Some apps (e.g. WhatsApp) take 50–120 ms to apply a move. Oz tracks each app's recent worst move time; windows of apps above `slowAppThreshold` (30 ms) are drawn from a capture while the strip moves (`slowAppProxy`).
-- **Wallpaper tinting.** macOS tints window backgrounds with the colour of the wallpaper behind them. A window parked off screen loses that tint, so its capture would look greyer. Oz turns the setting (System Settings › Appearance › *Allow wallpaper tinting in windows*) off while it runs and restores your choice when it quits; as a fallback it corrects the tint shift in live captures.
-- **Built to stay open.** Pictures of windows that aren't on screen are dropped after a minute, hidden overlays hold nothing, bookkeeping of closed windows is cleared, and the log rotates at 2 MB. Idle, Oz sleeps.
-- Scrolling doesn't change focus; focus changes when you click a window or use a focus command.
+## Limitations
 
-## 🦁 Lions and tigers and bears
+- `MultitouchSupport` is a private framework. If a future macOS version changes it, gestures may stop working while keyboard shortcuts continue to work; the menu then shows "No trackpad found".
+- Applications with a minimum window size (some settings windows) make their row at least that tall.
+- Windows in native full-screen mode are not tiled.
+- Mission Control opened without Oz (four-finger swipe or the Mission Control key) shows off-screen windows at a small size.
+- The log is at `~/Library/Logs/OzWM.log` (`debug: true` for verbose output). Main-thread delays are logged as `[stall]` with the code responsible, and slow applications as `[slow]`.
 
-*(oh my!)*
-
-- `MultitouchSupport` is a private framework; if a future macOS changes it, gestures may stop working (shortcuts keep working). The menu then shows "No trackpad found".
-- Apps with a minimum window size (some settings windows) make their row at least that tall.
-- Native full-screen windows are not tiled.
-- Mission Control opened without Oz (four-finger swipe, the Mission Control key) draws the windows further down the road small.
-- Log: `~/Library/Logs/OzWM.log` (`debug: true` for verbose output). Main-thread hitches are logged as `[stall]` with the code that caused them, slow apps as `[slow]`.
-
-<p align="center"><img src="docs/media/road.svg" alt="" width="100%"></p>
-
-<p align="center"><sub>🟢 Made for the yellow brick road · the GIFs are placeholders for now — drop a <code>.gif</code> next to each <code>docs/media/*.svg</code> and point the image at it.</sub></p>
+<p align="center"><sub>Usage animations are placeholders. To add one, place a <code>.gif</code> with the same name next to the corresponding file in <code>docs/media/</code> and update the image path above.</sub></p>

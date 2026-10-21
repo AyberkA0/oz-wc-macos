@@ -96,5 +96,5 @@
   <text x="104" y="232" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif"
         font-size="21" font-weight="600" fill="#f2fff8">a tiling window manager for macOS</text>
   <text x="104" y="264" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif"
-        font-size="17" fill="#ffe8a1">follow the strip, one brick at a time ✦</text>
+        font-size="17" fill="#ffe8a1">every window on one vertical strip</text>
 </svg>

@@ -37,7 +37,7 @@
   <text x="400" y="232" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif"
         font-size="30" font-weight="700" fill="#ffffff">Mission Control</text>
   <text x="400" y="266" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif"
-        font-size="18" fill="#ffeeb8">windows at full size</text>
+        font-size="18" fill="#ffeeb8">every window at full size</text>
   <text x="400" y="296" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, monospace"
         font-size="13" fill="#e6fff1" fill-opacity="0.75">GIF coming soon · docs/media/mission-control.gif</text>
 </svg>
