@@ -120,6 +120,15 @@ private struct SettingsView: View {
                 Toggle("Keep them alive (live capture)", isOn: model.binding(\.livePeek, ["livePeek"], json: { $0 }))
                 slider("Live capture rate", model.binding(\.livePeekFPS, ["livePeekFPS"], json: { $0 }), 4...30, step: 1, unit: "fps")
                     .disabled(!model.s.livePeek)
+                Picker("Capture resolution", selection: model.binding(\.captureScale, ["captureScale"], json: { Double($0) })) {
+                    Text("1x (same as the window, lossless)").tag(CGFloat(1))
+                    Text("0.75x").tag(CGFloat(0.75))
+                    Text("0.5x").tag(CGFloat(0.5))
+                    Text("0.25x").tag(CGFloat(0.25))
+                    if ![1, 0.75, 0.5, 0.25].contains(model.s.captureScale) {
+                        Text("\(String(format: "%.2f", model.s.captureScale))x (set in the config)").tag(model.s.captureScale)
+                    }
+                }
             }
             Section("Trackpad") {
                 Toggle("Three-finger double tap", isOn: model.binding(\.doubleTap.enabled, ["doubleTap", "enabled"], json: { $0 }))

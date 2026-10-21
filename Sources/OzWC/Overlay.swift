@@ -29,12 +29,48 @@ enum WindowCapture {
         return Spaces.connection
     }()
 
-    /// ~16 ms at full resolution; call it off the main thread. `nominal`: at 1x, for the live
-    /// peek's frames, which are many and short-lived (stills stay sharp).
-    static func image(_ id: CGWindowID, nominal: Bool = false) -> CGImage? {
+    /// The window at `scale` of its own resolution (1: every pixel it has, lossless; the
+    /// `captureScale` setting), and the size in points it shows. `expected`: the size the
+    /// window should have, to tell its backing scale when screens differ. ~16 ms at full
+    /// resolution; call it off the main thread.
+    static func image(_ id: CGWindowID, scale: CGFloat, expected: CGSize = .zero) -> (image: CGImage, points: CGSize)? {
+        let s = min(max(scale, 0.1), 1)
+        let backing = NSScreen.screens.map(\.backingScaleFactor).max() ?? 2
+        // When one pixel per point is enough, the window server captures that small itself
+        // (a quarter of the work on Retina); otherwise at full resolution, scaled down after.
+        let nominal = backing * s <= 1.001
         var wid = id
         let options = ignoreClipShape | fullWindow | (nominal ? nominalResolution : 0)
-        return (CGSHWCaptureWindowList(connection, &wid, 1, options) as? [CGImage])?.first
+        guard let raw = (CGSHWCaptureWindowList(connection, &wid, 1, options) as? [CGImage])?.first else { return nil }
+        let points = nominal ? CGSize(width: raw.width, height: raw.height) : pointSize(of: raw, near: expected)
+        let factor = nominal ? backing * s : s
+        return (factor >= 0.999 ? raw : downscaled(raw, by: factor) ?? raw, points)
+    }
+
+    /// The window size (points) a full-resolution capture shows: its pixels over the backing
+    /// scale, which is the screens' common one, or else the whole number closest to pixels /
+    /// expected points.
+    static func pointSize(of image: CGImage, near expected: CGSize) -> CGSize {
+        let scales = Set(NSScreen.screens.map(\.backingScaleFactor))
+        var scale = scales.count == 1 ? scales.first! : 0
+        if scale == 0 {
+            scale = expected.width > 0 ? max(1, (CGFloat(image.width) / expected.width).rounded()) : 2
+        }
+        return CGSize(width: (CGFloat(image.width) / scale).rounded(), height: (CGFloat(image.height) / scale).rounded())
+    }
+
+    /// `image` at `factor` of its size, in the capture's own pixel format (the live colour
+    /// correction works on that).
+    private static func downscaled(_ image: CGImage, by factor: CGFloat) -> CGImage? {
+        let w = max(1, Int((CGFloat(image.width) * factor).rounded()))
+        let h = max(1, Int((CGFloat(image.height) * factor).rounded()))
+        guard let cs = image.colorSpace,
+              let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: cs,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+        else { return nil }
+        ctx.interpolationQuality = .high
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage()
     }
 }
 
@@ -61,6 +97,8 @@ final class SnapshotCache {
     private var failedAt: [CGWindowID: CFTimeInterval] = [:]
     private var requestedPermission = false
     private let queue = DispatchQueue(label: "oz.snapshots", qos: .userInteractive)
+    /// Capture resolution (the `captureScale` setting). Snapshots already taken keep theirs.
+    var scale: CGFloat = 1
 
     /// Main thread: a requested snapshot is ready.
     var onReady: ((CGWindowID) -> Void)?
@@ -111,13 +149,14 @@ final class SnapshotCache {
         guard SnapshotCache.hasPermission, !inFlight.contains(id),
               CACurrentMediaTime() - (failedAt[id] ?? 0) > 1 else { return }
         inFlight.insert(id)
+        let scale = self.scale
         queue.async { [weak self] in
-            var image = WindowCapture.image(id)
-            if let img = image, SnapshotCache.isBlank(img) { image = nil }
+            var shot = WindowCapture.image(id, scale: scale, expected: size)
+            if let s = shot, SnapshotCache.isBlank(s.image) { shot = nil }
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.inFlight.remove(id)
-                guard let image else {
+                guard let (image, actual) = shot else {
                     // Don't retry every frame (each attempt lights the recording indicator).
                     self.failedAt[id] = CACurrentMediaTime()
                     Log.debug("snapshot \(id) unusable")
@@ -126,7 +165,6 @@ final class SnapshotCache {
                 // Filed under the size the window really had, not the one asked for: an app slow
                 // to take a new size (or refusing it) was captured at its old one, and that
                 // picture, fitted to the new frame, came out shrunk with gaps around it.
-                let actual = SnapshotCache.pointSize(of: image, near: size)
                 if abs(actual.width - size.width) > 4 || abs(actual.height - size.height) > 4 {
                     Log.debug("snapshot \(id) is \(Int(actual.width))x\(Int(actual.height)), not \(Int(size.width))x\(Int(size.height))")
                 }
@@ -134,17 +172,6 @@ final class SnapshotCache {
                 self.onReady?(id)
             }
         }
-    }
-
-    /// The window size (points) a capture shows: its pixels over the backing scale, which is
-    /// the screens' common one, or else the whole number closest to pixels / expected points.
-    static func pointSize(of image: CGImage, near expected: CGSize) -> CGSize {
-        let scales = Set(NSScreen.screens.map(\.backingScaleFactor))
-        var scale = scales.count == 1 ? scales.first! : 0
-        if scale == 0 {
-            scale = expected.width > 0 ? max(1, (CGFloat(image.width) / expected.width).rounded()) : 2
-        }
-        return CGSize(width: (CGFloat(image.width) / scale).rounded(), height: (CGFloat(image.height) / scale).rounded())
     }
 
     /// 8x8 thumbnail bytes: cheap way to tell whether two frames differ.
@@ -181,6 +208,7 @@ final class LiveMirror {
     /// window hasn't changed since the last one (nothing to correct or draw).
     var onFrame: ((CGImage?, [UInt8]) -> Void)?
     private let fps: Double
+    private let scale: CGFloat
     private var timer: DispatchSourceTimer?
     private let lock = NSLock()
     private var reference: [UInt8]?
@@ -199,19 +227,20 @@ final class LiveMirror {
     }
     private static let queue = DispatchQueue(label: "oz.mirror", qos: .userInteractive)
 
-    init(id: CGWindowID, fps: Double) {
+    init(id: CGWindowID, fps: Double, scale: CGFloat) {
         self.id = id
         self.fps = min(max(fps, 1), 60)
+        self.scale = scale
     }
 
     func start() {
-        let id = self.id
+        let id = self.id, scale = self.scale
         let t = DispatchSource.makeTimerSource(queue: LiveMirror.queue)
         t.schedule(deadline: .now(), repeating: 1.0 / fps, leeway: .milliseconds(4))
         // Frames never pile up: the handler runs serially and skips ticks while busy.
         let measureEvery = Int(fps * 2)
         t.setEventHandler { [weak self] in
-            guard var image = WindowCapture.image(id, nominal: true) else { return }
+            guard var image = WindowCapture.image(id, scale: scale)?.image else { return }
             // Unchanged since the last frame (most of the time, for anything but video): skip
             // the colour work and the redraw, just report it so an idle stream can stop.
             let raw = SnapshotCache.signature(image)
@@ -327,6 +356,8 @@ final class OverlayManager {
     /// Stream live content into peeks instead of showing a still snapshot.
     var live = true
     var liveFPS = 24.0
+    /// Resolution of live frames (the `captureScale` setting).
+    var captureScale: CGFloat = 1
 
     private final class Overlay {
         let window: NSPanel
@@ -454,7 +485,7 @@ final class OverlayManager {
     /// playing) the stream stops and the last frame stays, so the screen-recording
     /// indicator goes away; `wake` restarts it on the next swipe.
     private func startMirror(_ o: Overlay, id: CGWindowID) {
-        let mirror = LiveMirror(id: id, fps: liveFPS)
+        let mirror = LiveMirror(id: id, fps: liveFPS, scale: captureScale)
         let idleLimit = Int(liveFPS * 2)
         mirror.setReference(o.reference)
         mirror.onFrame = { [weak o] image, signature in

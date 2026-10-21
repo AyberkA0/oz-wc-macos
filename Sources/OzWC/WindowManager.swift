@@ -326,6 +326,8 @@ final class WindowManager {
         if settings.topOverflow == .slide { snapshots.requestPermissionOnce() }
         overlays.live = settings.livePeek
         overlays.liveFPS = settings.livePeekFPS
+        overlays.captureScale = settings.captureScale
+        snapshots.scale = settings.captureScale
         setupSnapshots()
         scanAll(initial: true)
         // Written when it changed: a few seconds of rearranging at most are lost to a crash.
@@ -878,6 +880,8 @@ final class WindowManager {
         overlays.hideAll()
         overlays.live = settings.livePeek
         overlays.liveFPS = settings.livePeekFPS
+        overlays.captureScale = settings.captureScale
+        snapshots.scale = settings.captureScale
         for w in windows.values { w.lastFrame = nil; w.parked = false }
         layoutVisible(animated: false)
     }

@@ -25,6 +25,7 @@ oz.set({
   topOverflow: "slide",          // window leaving the top edge: "slide" | "shrink" | "hide"
   livePeek: true,                // the half-visible window at the top stays live (video keeps playing)
   livePeekFPS: 12,               // frame rate of the live peek
+  captureScale: 1,               // window capture resolution: 1 = the window's own (lossless), 0.75 | 0.5 | 0.25
   slowAppProxy: true,            // windows of slow apps are moved as images while scrolling
   smoothScroll: true,            // all windows move as images while scrolling (smoothest; content pauses)
   slowAppThreshold: 30,          // ms; an app slower than this to move a window counts as slow

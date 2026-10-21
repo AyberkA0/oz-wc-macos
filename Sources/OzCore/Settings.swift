@@ -53,6 +53,9 @@ public struct Settings {
     public var livePeek = true
     /// Frame rate of the live peek.
     public var livePeekFPS = 12.0
+    /// Resolution of window captures (snapshots and live frames) as a fraction of the window's
+    /// own: 1 keeps every pixel (lossless), 0.75 / 0.5 / 0.25 use less memory and capture work.
+    public var captureScale: CGFloat = 1
     /// While scrolling, draw windows of apps that are slow to move (see slowAppThreshold)
     /// from a snapshot and move the real window once, when the scroll ends.
     public var slowAppProxy = true
@@ -95,6 +98,7 @@ public struct Settings {
         if let v = num(j["minVisible"]) { minVisible = CGFloat(max(0, v)) }
         if let v = j["livePeek"] as? Bool { livePeek = v }
         if let v = num(j["livePeekFPS"]), v > 0 { livePeekFPS = min(v, 60) }
+        if let v = num(j["captureScale"]), v > 0, v <= 1 { captureScale = CGFloat(max(v, 0.1)) }
         if let v = j["slowAppProxy"] as? Bool { slowAppProxy = v }
         if let v = j["smoothScroll"] as? Bool { smoothScroll = v }
         if let v = num(j["slowAppThreshold"]), v > 0 { slowAppThreshold = v }
