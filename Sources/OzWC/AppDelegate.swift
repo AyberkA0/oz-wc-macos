@@ -84,10 +84,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         started = true
 
         gestures.handler = { [unowned self] e in
-            if HotkeyCenter.shared.suspended { return }
             if case .doubleTap = e {
+                // Still works over a pass-through app: it goes to the Dock, not to the app.
                 runDoubleTap()
-            } else {
+            } else if !HotkeyCenter.shared.suspended {
                 wm.handleGesture(e)
             }
         }

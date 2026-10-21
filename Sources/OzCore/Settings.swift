@@ -68,7 +68,7 @@ public struct Settings {
     public var swipe = SwipeSettings()
     public var doubleTap = DoubleTapSettings()
     /// While one of these apps is frontmost (bundle id or name, case-insensitive) Oz lets
-    /// go of its shortcuts and gestures so the app gets them: remote desktops, game streaming.
+    /// go of its shortcuts and swipes so the app gets them (the double tap keeps working): remote desktops, game streaming.
     public var passThroughApps = [
         "com.moonlight-stream.Moonlight", "tv.parsec.www", "com.microsoft.rdc.macos",
         "com.apple.ScreenSharing", "com.realvnc.vncviewer", "com.p5sys.jump.mac.viewer",
