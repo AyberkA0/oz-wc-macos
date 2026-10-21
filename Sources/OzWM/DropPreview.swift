@@ -138,3 +138,67 @@ final class InsertionLine {
         window.orderOut(nil)
     }
 }
+
+/// Where the view is in the strip: a thin rounded bar along the zone's right edge, sized like
+/// the visible part of the strip and placed like it. Shown while the strip moves, faded out a
+/// moment after it stops (like macOS's overlay scrollers).
+final class ScrollIndicator {
+    private let window: NSPanel
+    private var visible = false
+    private var hideWork: DispatchWorkItem?
+
+    static let width: CGFloat = 5
+
+    init() {
+        window = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false
+        window.ignoresMouseEvents = true
+        window.level = .floating
+        window.isReleasedWhenClosed = false
+        window.animationBehavior = .none
+        window.collectionBehavior = [.ignoresCycle, .fullScreenNone, .transient]
+        window.alphaValue = 0
+        let view = NSView()
+        view.wantsLayer = true
+        // Grey reads on light and dark content alike; the thin light rim separates it from both.
+        view.layer?.backgroundColor = NSColor(white: 0.45, alpha: 0.65).cgColor
+        view.layer?.borderColor = NSColor(white: 1, alpha: 0.35).cgColor
+        view.layer?.borderWidth = 0.5
+        view.layer?.cornerRadius = ScrollIndicator.width / 2
+        window.contentView = view
+    }
+
+    /// Shows the bar at `frame` (AX coordinates) and fades it out once it hasn't moved for a bit.
+    func show(_ frame: CGRect) {
+        window.setFrame(NSRect(x: frame.minX, y: Geometry.primaryHeight - frame.maxY, width: frame.width, height: frame.height),
+                        display: false)
+        if !visible {
+            visible = true
+            window.orderFrontRegardless()
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.12
+                window.animator().alphaValue = 1
+            }
+        }
+        hideWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.hide() }
+        hideWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: work)
+    }
+
+    func hide() {
+        hideWork?.cancel()
+        hideWork = nil
+        guard visible else { return }
+        visible = false
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.25
+            window.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            guard let self, !self.visible else { return }
+            self.window.orderOut(nil)
+        })
+    }
+}

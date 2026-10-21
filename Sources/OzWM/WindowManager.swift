@@ -208,6 +208,9 @@ final class WindowManager {
     private var dragging: CGWindowID?
     private let dropPreview = DropPreview()
     private let insertionLine = InsertionLine()
+    /// One scroll position bar per display, and the scroll it last showed per strip.
+    private var scrollIndicators: [CGDirectDisplayID: ScrollIndicator] = [:]
+    private var indicatedScroll: [StripKey: CGFloat] = [:]
     private var lastPreviewUpdate: CFTimeInterval = 0
     /// The tiled window whose edge is being dragged (until the mouse is let go).
     private var resizeDrag: CGWindowID?
@@ -347,6 +350,34 @@ final class WindowManager {
             }
         }
         return out
+    }
+
+    // MARK: Scroll indicator
+
+    /// Shows where the view is in the strip while it scrolls (nothing when it all fits, or a
+    /// window fills the screen).
+    private func updateScrollIndicator(_ key: StripKey, strip: Strip, screen: NSScreen) {
+        let display = key.display
+        guard indicatedScroll[key] != strip.renderScrollY else { return }
+        indicatedScroll[key] = strip.renderScrollY
+        let vp = viewport(screen)
+        let content = strip.contentHeight(gap: settings.gap)
+        guard content > vp.height + 1, maximizedID(key) == nil else {
+            scrollIndicators[display]?.hide()
+            return
+        }
+        let thumb = max(36, (vp.height * vp.height / content).rounded())
+        let progress = min(max(strip.renderScrollY / (content - vp.height), 0), 1)
+        let y = (vp.minY + (vp.height - thumb) * progress).rounded()
+        let x = scrollArea(screen).maxX - max(settings.outerGap / 2, 3) - ScrollIndicator.width / 2
+        let indicator = scrollIndicators[display] ?? ScrollIndicator()
+        scrollIndicators[display] = indicator
+        indicator.show(CGRect(x: x.rounded(), y: y, width: ScrollIndicator.width, height: thumb))
+    }
+
+    private func hideScrollIndicators() {
+        scrollIndicators.values.forEach { $0.hide() }
+        indicatedScroll.removeAll()
     }
 
     // MARK: Undo
@@ -1040,6 +1071,7 @@ final class WindowManager {
         dirty.removeAll()
         // Keep the peeks on screen (they live on their own Space); just stop streaming.
         overlays.pauseMirrors()
+        hideScrollIndicators()
         gesture = nil
         scanAll(initial: false)
         onEnabledChanged?(enabled)
@@ -1887,6 +1919,7 @@ final class WindowManager {
             // would be laid out with the new desktop's area (wrong widths, resized windows).
             guard let strip = strips[key], let screen = visibleScreen(key) else { continue }
             apply(strip, screen: screen, key: key)
+            updateScrollIndicator(key, strip: strip, screen: screen)
         }
         dirty.removeAll()
         for key in finished {
@@ -2528,6 +2561,7 @@ final class WindowManager {
         pendingParks.removeAll()
         proxied.removeAll()
         overlays.hideAll()
+        hideScrollIndicators()
         for (key, screen) in visibleKeys() {
             guard let strip = strips[key] else { continue }
             let vf = Geometry.ax(screen.visibleFrame)
