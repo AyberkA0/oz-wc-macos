@@ -115,3 +115,39 @@ enum Geometry {
         return NSScreen.screens.first { NSMouseInRect(loc, $0.frame, false) } ?? NSScreen.main
     }
 }
+
+extension NSScreen {
+    /// The part of the screen windows may use: `visibleFrame`, except that an auto-hiding
+    /// Dock gives its edge back (macOS keeps it reserved in `visibleFrame` even while hidden).
+    var usableFrame: NSRect {
+        var r = visibleFrame
+        guard Dock.autohides else { return r }
+        switch Dock.edge {
+        case "left": r.size.width += r.minX - frame.minX; r.origin.x = frame.minX
+        case "right": r.size.width = frame.maxX - r.minX
+        default: r.size.height += r.minY - frame.minY; r.origin.y = frame.minY
+        }
+        return r
+    }
+}
+
+/// The Dock's preferences, read again at most once a second (layout asks constantly).
+enum Dock {
+    private static var readAt = Date.distantPast
+    private static var cached = (autohides: false, edge: "bottom")
+
+    private static var prefs: (autohides: Bool, edge: String) {
+        if Date().timeIntervalSince(readAt) > 1 {
+            readAt = Date()
+            let domain = "com.apple.dock" as CFString
+            CFPreferencesAppSynchronize(domain)
+            let hide = CFPreferencesCopyAppValue("autohide" as CFString, domain) as? Bool ?? false
+            let edge = CFPreferencesCopyAppValue("orientation" as CFString, domain) as? String ?? "bottom"
+            cached = (hide, edge)
+        }
+        return cached
+    }
+
+    static var autohides: Bool { prefs.autohides }
+    static var edge: String { prefs.edge }
+}

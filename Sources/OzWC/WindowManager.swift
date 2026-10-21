@@ -785,7 +785,7 @@ final class WindowManager {
     /// The part of `screen` (AX coordinates) its current desktop's strip scrolls in.
     /// `space`: another desktop's area on this screen than the one showing.
     private func scrollArea(_ screen: NSScreen, space: SpaceID? = nil) -> CGRect {
-        let vf = Geometry.ax(screen.visibleFrame)
+        let vf = Geometry.ax(screen.usableFrame)
         guard let f = areaBySpace[space ?? visibleKey(for: screen).space] else { return vf }
         return CGRect(x: vf.minX + f.minX * vf.width, y: vf.minY + f.minY * vf.height,
                       width: f.width * vf.width, height: f.height * vf.height).integral.intersection(vf)
@@ -1641,7 +1641,7 @@ final class WindowManager {
     /// The regions around the Oz zone on `screen`'s current desktop (none without a zone).
     private func outsideRegions(_ screen: NSScreen) -> [CGRect] {
         guard scrollAreaFraction(screen) != nil else { return [] }
-        return OutsideRegions.compute(outer: Geometry.ax(screen.visibleFrame), zone: scrollArea(screen))
+        return OutsideRegions.compute(outer: Geometry.ax(screen.usableFrame), zone: scrollArea(screen))
     }
 
     /// Tiles a floating window in the region outside the zone that holds `point`: alone it
@@ -2050,7 +2050,7 @@ final class WindowManager {
     private func params(_ screen: NSScreen) -> LayoutParams {
         let area = scrollArea(screen)
         // An area reaching the bottom of the usable screen lets windows run off it as before.
-        let cut = area.maxY < Geometry.ax(screen.visibleFrame).maxY - 1
+        let cut = area.maxY < Geometry.ax(screen.usableFrame).maxY - 1
         return LayoutParams(viewport: viewport(screen), hardTop: area.minY,
                             hardBottom: cut ? area.maxY : Geometry.ax(screen.frame).maxY, gap: settings.gap,
                             widthRatio: settings.width, topOverflow: settings.topOverflow,
@@ -2871,7 +2871,7 @@ final class WindowManager {
         hideScrollIndicators()
         for (key, screen) in visibleKeys() {
             guard let strip = strips[key] else { continue }
-            let vf = Geometry.ax(screen.visibleFrame)
+            let vf = Geometry.ax(screen.usableFrame)
             for item in strip.layout(params(screen), scroll: strip.renderScrollY, minHeights: minHeights) {
                 guard let w = windows[item.id] else { continue }
                 // Where it belongs, pushed inside the screen: rows above pile up at the top,
@@ -2928,7 +2928,7 @@ final class WindowManager {
     /// What a window filling the screen covers: the whole usable screen (below the menu bar,
     /// beside the Dock), not just the Oz zone, with the usual margin.
     private func fullScreenFrame(_ screen: NSScreen) -> CGRect {
-        Geometry.ax(screen.visibleFrame).insetBy(dx: settings.outerGap, dy: settings.outerGap)
+        Geometry.ax(screen.usableFrame).insetBy(dx: settings.outerGap, dy: settings.outerGap)
     }
 
     /// The strip's full-screen window, if it still belongs to the strip: it may have moved to

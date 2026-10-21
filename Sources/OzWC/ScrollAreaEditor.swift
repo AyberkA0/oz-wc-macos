@@ -100,7 +100,7 @@ private final class EditorView: NSView {
     private var drag: Drag?
 
     init(frame: NSRect, screen: NSScreen) {
-        let vf = screen.visibleFrame
+        let vf = screen.usableFrame
         usable = NSRect(x: vf.minX - screen.frame.minX, y: vf.minY - screen.frame.minY, width: vf.width, height: vf.height)
         super.init(frame: frame)
         setupLayers(scale: screen.backingScaleFactor)
