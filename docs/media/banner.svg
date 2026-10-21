@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b2a2a"/>
+      <stop offset="0.55" stop-color="#145a46"/>
+      <stop offset="1" stop-color="#7fd6a3"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.68" cy="0.42" r="0.45">
+      <stop offset="0" stop-color="#b9ffd6" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#b9ffd6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="tower" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7dffb2"/>
+      <stop offset="1" stop-color="#0f8a55"/>
+    </linearGradient>
+    <linearGradient id="towerDark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3fd98a"/>
+      <stop offset="1" stop-color="#0a5e3b"/>
+    </linearGradient>
+    <linearGradient id="road" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#f7c843"/>
+      <stop offset="1" stop-color="#ffe8a1"/>
+    </linearGradient>
+    <pattern id="bricks" width="28" height="14" patternUnits="userSpaceOnUse">
+      <rect width="28" height="14" fill="url(#road)"/>
+      <path d="M0 0.5H28M0 7.5H28M7 0V7M21 7V14" stroke="#c8902a" stroke-width="1.4" fill="none" opacity="0.75"/>
+    </pattern>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.42"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#d8ffe9" stop-opacity="0.28"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="0.6" stop-color="#ffffff" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.7"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#04281c" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="440" fill="url(#sky)"/>
+  <rect width="1200" height="440" fill="url(#glow)"/>
+  <!-- stars -->
+  <g fill="#eafff3" opacity="0.8">
+    <circle cx="90" cy="48" r="1.6"/><circle cx="210" cy="92" r="1.2"/><circle cx="330" cy="36" r="1.8"/>
+    <circle cx="470" cy="70" r="1.1"/><circle cx="1040" cy="52" r="1.7"/><circle cx="1130" cy="110" r="1.2"/>
+    <circle cx="960" cy="28" r="1.3"/><circle cx="560" cy="30" r="1.4"/>
+  </g>
+
+  <!-- the Emerald City -->
+  <g transform="translate(560 0)">
+    <ellipse cx="250" cy="300" rx="300" ry="60" fill="#5ef0a0" opacity="0.35" filter="url(#soft)"/>
+    <g fill="url(#towerDark)">
+      <rect x="40" y="200" width="46" height="110"/><polygon points="40,200 63,140 86,200"/>
+      <rect x="402" y="190" width="52" height="120"/><polygon points="402,190 428,120 454,190"/>
+      <rect x="470" y="230" width="38" height="80"/><polygon points="470,230 489,180 508,230"/>
+      <rect x="-10" y="245" width="40" height="65"/><polygon points="-10,245 10,205 30,245"/>
+    </g>
+    <g fill="url(#tower)">
+      <rect x="100" y="165" width="56" height="145"/><polygon points="100,165 128,85 156,165"/>
+      <rect x="170" y="110" width="74" height="200"/><polygon points="170,110 207,20 244,110"/>
+      <rect x="258" y="140" width="62" height="170"/><polygon points="258,140 289,60 320,140"/>
+      <rect x="334" y="175" width="54" height="135"/><polygon points="334,175 361,105 388,175"/>
+    </g>
+    <g fill="#eafff3" opacity="0.85">
+      <rect x="196" y="140" width="8" height="14" rx="4"/><rect x="214" y="140" width="8" height="14" rx="4"/>
+      <rect x="196" y="176" width="8" height="14" rx="4"/><rect x="214" y="176" width="8" height="14" rx="4"/>
+      <rect x="280" y="168" width="7" height="12" rx="3.5"/><rect x="294" y="168" width="7" height="12" rx="3.5"/>
+      <rect x="122" y="190" width="7" height="12" rx="3.5"/><rect x="352" y="198" width="7" height="12" rx="3.5"/>
+    </g>
+    <circle cx="207" cy="20" r="5" fill="#ffffff"/>
+  </g>
+
+  <!-- rolling hills -->
+  <path d="M0 330 C200 290 380 320 560 305 C760 288 960 320 1200 300 V440 H0 Z" fill="#2f9e5f"/>
+  <path d="M0 360 C240 330 470 370 700 350 C900 333 1060 360 1200 345 V440 H0 Z" fill="#23824d"/>
+
+  <!-- the yellow brick road, winding up to the city -->
+  <path d="M120 440 C230 410 180 380 330 372 C470 365 520 348 640 340 C720 335 760 322 805 312
+           L842 312 C800 326 770 342 700 352 C590 368 530 382 410 392 C300 402 330 420 300 440 Z"
+        fill="url(#bricks)" stroke="#b07a1e" stroke-width="2"/>
+
+  <!-- liquid glass card -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="92" width="470" height="210" rx="34" fill="url(#glass)"/>
+    <rect x="70.75" y="92.75" width="468.5" height="208.5" rx="33.25" fill="none" stroke="url(#rim)" stroke-width="1.5"/>
+    <path d="M104 104 H506 a28 28 0 0 1 22 12" fill="none" stroke="#ffffff" stroke-opacity="0.7" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <text x="104" y="190" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif"
+        font-size="84" font-weight="800" fill="#ffffff" letter-spacing="-2">Oz</text>
+  <text x="104" y="232" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif"
+        font-size="21" font-weight="600" fill="#f2fff8">a tiling window manager for macOS</text>
+  <text x="104" y="264" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif"
+        font-size="17" fill="#ffe8a1">follow the strip, one brick at a time ✦</text>
+</svg>
