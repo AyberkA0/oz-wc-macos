@@ -82,8 +82,9 @@ final class DropPreview {
         window = ActiveLookPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         window.isOpaque = false
         window.backgroundColor = .clear
-        // A soft shadow under the pane, as glass floating above the windows casts.
-        window.hasShadow = true
+        // No window shadow: macOS draws it with a dark outline along the edge, a black line
+        // around the glass. The light rim gives the edge instead.
+        window.hasShadow = false
         window.ignoresMouseEvents = true
         window.level = .normal
         window.isReleasedWhenClosed = false
