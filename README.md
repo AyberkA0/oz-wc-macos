@@ -149,7 +149,7 @@ With a scroll area set, the remaining screen space holds windows that do not scr
 - **Regions.** The space around the scroll area is divided into rectangles: one for each side of the scroll area wide enough to hold a window (150 pt), using as few rectangles as possible and assigning each corner to the side that yields the longest rectangle. A window dropped outside the scroll area is tiled into the region under the cursor. Alone, it fills the region; if the region is already occupied, the region is split along its longer side (stacked in a tall region, side by side in a wide one) and the new window takes the half under the cursor. When a window leaves, the others expand to fill the space; when the scroll area is resized, windows move to the region that now contains them.
 - **Returning to the strip.** Dragging a window back into the scroll area inserts it where the split line indicates. This also applies to windows floated with `toggleFloat`; windows that float because of a rule or a fixed size remain floating.
 
-While you drag, a translucent panel (Liquid Glass on macOS 26 and later, frosted glass on earlier versions) previews where the window will land: its slot in a region, or the scroll area itself when it would join the strip.
+While you drag, a pane of glass (clear Liquid Glass on macOS 26 and later, refracting what is behind it; frosted glass on earlier versions) previews where the window will land: its slot in a region, or the scroll area itself when it would join the strip.
 
 <p align="center"><img src="docs/media/regions.svg" alt="Windows tiled in the regions around the scroll area" width="720"></p>
 <p align="center"><img src="docs/media/tear-off.svg" alt="Tearing a tab off into a region" width="720"></p>
