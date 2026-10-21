@@ -31,6 +31,18 @@ enum SettingsOverrides {
         ["livePeek", "smoothScroll"].forEach { UserDefaults.standard.removeObject(forKey: $0) }
     }
 
+    /// Drops one value, so the config file's applies again.
+    static func remove(_ path: [String]) {
+        var d = all
+        if path.count == 2, var inner = d[path[0]] as? [String: Any] {
+            inner.removeValue(forKey: path[1])
+            d[path[0]] = inner.isEmpty ? nil : inner
+        } else if let k = path.first {
+            d.removeValue(forKey: k)
+        }
+        UserDefaults.standard.set(d, forKey: key)
+    }
+
     static func reset() {
         UserDefaults.standard.removeObject(forKey: key)
         ["livePeek", "smoothScroll"].forEach { UserDefaults.standard.removeObject(forKey: $0) }

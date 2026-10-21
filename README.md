@@ -92,7 +92,7 @@ The menu bar icon provides: tiling on/off (globally or for the current desktop),
 | Three-finger double tap | Mission Control (configurable) |
 | Three fingers left/right | Handled by macOS (switching desktops) |
 
-To reverse the scroll direction, set `swipe.natural: false`. While the strip moves, a thin bar along the right edge shows the visible portion and position; it fades out shortly after scrolling stops.
+Menu bar › *Magnetic Scrolling (Stop at Windows)* makes every swipe come to rest with a window at the top of the scroll area; turned off, scrolling is free and only settles on a window edge it ends near (`swipe.snap`: `"always"` or `"near"`). To reverse the scroll direction, set `swipe.natural: false`. While the strip moves, a thin bar along the right edge shows the visible portion and position; it fades out shortly after scrolling stops.
 
 When Oz opens Mission Control or App Exposé (double tap, `⌃⌥ m`, `⌃⌥⇧ m`), it first brings off-screen windows onto the screen so the overview shows them at a normal size, and returns them to the strip when the overview closes. When the overview is opened another way (four-finger swipe, the Mission Control key), off-screen windows appear small.
 

@@ -253,6 +253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             item("Keep Windows Alive (Live Capture)", #selector(toggleLivePeek)).state = wm.settings.livePeek ? .on : .off
             item("Smooth Scrolling (Snapshots While Moving)", #selector(toggleSmoothScroll)).state = wm.settings.smoothScroll ? .on : .off
+            item("Magnetic Scrolling (Stop at Windows)", #selector(toggleMagneticScroll)).state = wm.settings.swipe.snap == .always ? .on : .off
             item("Retile", #selector(retile))
             if wm.enabled { addPresetItems(to: menu) }
         }
@@ -391,6 +392,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         SettingsOverrides.set(["smoothScroll"], on)
         wm.setSmoothScroll(on)
         settingsWindow.refresh(wm.settings)
+    }
+
+    /// On: every swipe comes to rest with a window at the top of the scroll area. Off: free
+    /// scrolling, as the config has it (by default it only settles on an edge it ends near).
+    @objc private func toggleMagneticScroll() {
+        if wm.settings.swipe.snap == .always {
+            SettingsOverrides.remove(["swipe", "snap"])
+            // The config may itself ask for it; then free means "near".
+            if configSettings.swipe.snap == .always { SettingsOverrides.set(["swipe", "snap"], SnapMode.near.rawValue) }
+        } else {
+            SettingsOverrides.set(["swipe", "snap"], SnapMode.always.rawValue)
+        }
+        applySettings()
     }
 
     @objc private func setScrollArea() {
