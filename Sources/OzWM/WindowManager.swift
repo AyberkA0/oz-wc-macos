@@ -228,6 +228,13 @@ final class WindowManager {
     /// The tiled window the user let go of, and when: it was dragged, however long ago its
     /// last move was (resting while the strip scrolls sends none).
     private var dropped: (id: CGWindowID, at: CFTimeInterval)?
+    /// Where the left button went down (AX coordinates), while it's down. A window counts as
+    /// dragged (or resized) by the user only once the cursor has left this spot: Oz's own
+    /// moves while the button happens to be down are not drags.
+    private var mouseDownAt: CGPoint?
+    /// A window focused while the button was down: shown (scrolled to) once it's let go, not
+    /// while it's held — moving a window under a held title bar makes macOS drag it along.
+    private var revealOnMouseUp: CGWindowID?
     /// Since when the cursor rests in an edge band (scrolling starts after a short dwell, not
     /// when it merely passes through), and the timer that notices while it doesn't move.
     private var bandSince: CFTimeInterval?
@@ -275,32 +282,23 @@ final class WindowManager {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self?.scanAll(initial: false) }
         }
         driver.onFrame = { [weak self] in self?.frame() }
-        NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
-            let p = NSEvent.mouseLocation
-            DispatchQueue.main.async {
-                self?.lastMouseUp = (CGPoint(x: p.x, y: Geometry.primaryHeight - p.y), CACurrentMediaTime())
-                self?.endDragScroll()
-                // A tiled window let go inside the zone: place it now rather than after the
-                // usual settle delay, so it slides into the slot the line showed.
-                if let id = self?.dragging, let w = self?.windows[id] {
-                    self?.dropped = (id, CACurrentMediaTime())
-                    self?.checkFrame(w)
-                }
-                self?.dragging = nil
-                self?.resizeDrag = nil
-                self?.dropPreview.hide()
-                self?.insertionLine.hide()
-                self?.endLiveResize()
-                self?.resolveDrops()
-            }
+        // Clicks in other apps (global) and on Oz's own windows (local: peeks, editors).
+        // Monitors run on the main thread: handled right away, before any AX notification
+        // the click causes is looked at.
+        NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in self?.mouseWentUp() }
+        NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] e in
+            self?.mouseWentUp()
+            return e
         }
         NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDragged) { [weak self] _ in
             DispatchQueue.main.async { self?.updateDropPreview() }
         }
         NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] e in
-            guard e.clickCount == 2 else { return }
-            let p = NSEvent.mouseLocation
-            DispatchQueue.main.async { self?.titleBarDoubleClick(at: CGPoint(x: p.x, y: Geometry.primaryHeight - p.y)) }
+            self?.mouseWentDown(doubleClick: e.clickCount == 2)
+        }
+        NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] e in
+            self?.mouseWentDown(doubleClick: false)
+            return e
         }
         writer.onMinHeight = { [weak self] id, h in
             // The app refused to get that small at the top edge: remember it, re-evaluate.
@@ -864,7 +862,7 @@ final class WindowManager {
             emit?("windowCreated", info(w))
             return
         }
-        if mode == .created && NSEvent.pressedMouseButtons & 1 != 0 {
+        if mode == .created && NSEvent.pressedMouseButtons & 1 != 0 && cursorMovedSinceMouseDown() {
             // Born under a dragging mouse: a tab torn off its window. Where it's let go decides
             // whether it joins the strip (inside a scroll area) or floats there (outside).
             floating[wid] = w
@@ -999,7 +997,9 @@ final class WindowManager {
         case kAXWindowMovedNotification, kAXWindowResizedNotification:
             // While scrolling these are our own moves, dozens per second: skip the lookup.
             guard !isMoving, let w = find(element, pid: pid) else { return }
-            let mouseDown = NSEvent.pressedMouseButtons & 1 != 0
+            // Held down and moved away from where it was pressed: the user is dragging (or
+            // resizing). Held still, a window moving is Oz's (or its app's) doing, not a drag.
+            let mouseDown = NSEvent.pressedMouseButtons & 1 != 0 && cursorMovedSinceMouseDown()
             if floating[w.id] != nil {
                 // Dragging a window taken out of the strip: it may be dropped back in.
                 let ours = CACurrentMediaTime() - (dockPlacedAt[w.id] ?? 0) < 0.6
@@ -1011,8 +1011,13 @@ final class WindowManager {
                 return
             }
             guard windows[w.id] != nil else { return }
-            // The app zooming the window, or one filling the screen: not the user resizing a tile.
-            if zoomClick?.id == w.id || isMaximized(w.id) { return }
+            // The app zooming the window: not the user resizing a tile.
+            if zoomClick?.id == w.id { return }
+            // Filling the screen: no dragging into the strip, but put back if moved away.
+            if isMaximized(w.id) {
+                scheduleFrameCheck(w)
+                return
+            }
             if notification == kAXWindowResizedNotification && mouseDown {
                 // Resizing, not moving: no landing place to show.
                 resizeDrag = w.id
@@ -1083,15 +1088,79 @@ final class WindowManager {
         guard gesture == nil, windows[w.id] != nil, let (key, strip) = locate(w.id) else { return }
         let wid = w.id
         strip.focused = wid
-        if let screen = visibleScreen(key) {
-            let vh = viewport(screen).height
-            let target = strip.scrollToReveal(wid, viewportHeight: vh, gap: settings.gap)
-            if abs(target - strip.scrollY) > 0.5 {
-                strip.scrollY = target
-                relayout(key, animated: true)
-            }
+        if NSEvent.pressedMouseButtons & 1 != 0 {
+            // Clicked: scroll to it once the button is let go (unless it turns into a drag).
+            revealOnMouseUp = wid
+        } else {
+            reveal(wid)
         }
         emit?("windowFocused", info(w))
+    }
+
+    private func mouseWentDown(doubleClick: Bool) {
+        let m = NSEvent.mouseLocation
+        let p = CGPoint(x: m.x, y: Geometry.primaryHeight - m.y)
+        mouseDownAt = p
+        revealOnMouseUp = nil
+        // Pressing on a gliding strip stops it where it is (like touching a scrolling list),
+        // so the window under the cursor doesn't move while it's held.
+        stopGlide(at: p)
+        if doubleClick { titleBarDoubleClick(at: p) }
+    }
+
+    private func mouseWentUp() {
+        let m = NSEvent.mouseLocation
+        lastMouseUp = (CGPoint(x: m.x, y: Geometry.primaryHeight - m.y), CACurrentMediaTime())
+        mouseDownAt = nil
+        // A click (no drag) on a window that's partly out of view: show it now.
+        if let id = revealOnMouseUp {
+            revealOnMouseUp = nil
+            if dragging == nil { reveal(id) }
+        }
+        endDragScroll()
+        // A tiled window let go inside the zone: place it now rather than after the usual
+        // settle delay, so it slides into the slot the line showed.
+        if let id = dragging, let w = windows[id] {
+            dropped = (id, CACurrentMediaTime())
+            checkFrame(w)
+        }
+        dragging = nil
+        resizeDrag = nil
+        dropPreview.hide()
+        insertionLine.hide()
+        endLiveResize()
+        resolveDrops()
+    }
+
+    /// Scrolls the window's strip so the window is fully in view (if it isn't).
+    private func reveal(_ id: CGWindowID) {
+        guard windows[id] != nil, let (key, strip) = locate(id), let screen = visibleScreen(key) else { return }
+        let vh = viewport(screen).height
+        let target = strip.scrollToReveal(id, viewportHeight: vh, gap: settings.gap)
+        if abs(target - strip.scrollY) > 0.5 {
+            strip.scrollY = target
+            relayout(key, animated: true)
+        }
+    }
+
+    private func cursorMovedSinceMouseDown() -> Bool {
+        // Pressed where Oz didn't see it: don't take window moves for a drag.
+        guard let d = mouseDownAt else { return false }
+        let m = NSEvent.mouseLocation
+        return hypot(m.x - d.x, Geometry.primaryHeight - m.y - d.y) > 4
+    }
+
+    /// The left button went down at `p`: a strip gliding there (a swipe's momentum, a scroll
+    /// animation) stops where it is. Rearrangements (windows sliding to new places) finish.
+    private func stopGlide(at p: CGPoint) {
+        guard let screen = Geometry.screen(containingAX: p), scrollArea(screen).contains(p) else { return }
+        let key = visibleKey(for: screen)
+        guard animations[key] != nil, transitions[key] == nil, gesture?.key != key,
+              let strip = strips[key] else { return }
+        strip.scrollY = strip.renderScrollY
+        stopAnimation(key)
+        if gesture == nil { releaseProxies(key) }
+        settle(strip, screen: screen)
     }
 
     private func spaceChanged() {
@@ -1155,7 +1224,15 @@ final class WindowManager {
 
     private func compareFrame(_ w: ManagedWindow, _ actual: CGRect) {
         guard enabled, !isMoving, !overviewActive, windows[w.id] === w, !w.parked, let expected = w.lastFrame,
-              zoomClick?.id != w.id, !isMaximized(w.id) else { return }
+              zoomClick?.id != w.id else { return }
+        if isMaximized(w.id) {
+            // Filling the screen: if it was dragged or resized away, it goes back.
+            if !actual.approxEqual(expected, tolerance: 3), let (key, _) = locate(w.id) {
+                w.lastFrame = nil
+                relayout(key, animated: true)
+            }
+            return
+        }
         // Moved by the mouse (the check runs once the button is released), not by its app.
         // Taken only here, past the guard: a check put off until later must still see it.
         let now = CACurrentMediaTime()

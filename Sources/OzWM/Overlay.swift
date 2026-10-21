@@ -306,10 +306,19 @@ enum ColorShift {
 }
 
 /// Click target for a peeking window: clicking the visible strip brings the real window back.
+/// A click, not a press: acting on mouse down started scrolling while the button was still
+/// held, and a press that turns into a drag isn't a click.
 private final class PeekView: NSView {
     var onClick: (() -> Void)?
+    private var downAt: NSPoint?
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func mouseDown(with event: NSEvent) { onClick?() }
+    override func mouseDown(with event: NSEvent) { downAt = NSEvent.mouseLocation }
+    override func mouseUp(with event: NSEvent) {
+        defer { downAt = nil }
+        guard let d = downAt else { return }
+        let p = NSEvent.mouseLocation
+        if hypot(p.x - d.x, p.y - d.y) <= 4 { onClick?() }
+    }
 }
 
 final class OverlayManager {
