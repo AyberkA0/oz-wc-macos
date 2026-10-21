@@ -65,7 +65,7 @@ The ▤ menu bar icon: toggle tiling, toggle tiling for this desktop, live captu
 
 By default the strip scrolls across the whole screen. Menu bar › *Set Scroll Area…* (or `⌃⌥⇧ a`) lets you give it only part of the screen, e.g. the right half: the windows are hidden behind the wallpaper, the rest of the screen is dimmed, and the hatched area can be resized by its edges and corners, moved by dragging inside it, or drawn anew (presets: left/right half, left/right two thirds, full). Return saves, Esc cancels. The strip then lives in that area only and the rest of the screen stays empty: windows are cut off at the area's top and bottom edges the same way they slide off the top of the screen. Each desktop has its own area, remembered across restarts; *Reset Scroll Area* goes back to the whole screen.
 
-Menu bar › *Keep Windows Alive (Live Capture)* decides how windows cut off at an edge are drawn: on, they are captured continuously (`livePeekFPS`), so video keeps playing; off, Oz takes one picture when a window starts to peek and shows that, so screen capture (and its indicator) only runs for a moment. The menu choice overrides `livePeek` in the config and is remembered.
+Menu bar › *Keep Windows Alive (Live Capture)* decides how windows cut off at an edge are drawn: on, they are captured continuously (`livePeekFPS`), so video keeps playing; off, Oz takes one picture when a window starts to peek and shows that, so screen capture (and its indicator) only runs for a moment. The menu choice overrides `livePeek` in the config and is remembered (like the Settings window).
 
 With a scroll area set, the rest of the screen is free for windows that stay put:
 
@@ -115,6 +115,10 @@ Keys are resolved in the active keyboard layout; the defaults are for a US layou
 | `⌃⌥⇧ c` | reload the config | | `⌃⌥⇧ a` | set this desktop's scroll area |
 | `⌃⌥ /` | shortcut cheat sheet | | `⌃⌥ z` | undo the last layout change |
 
+## Settings window
+
+Menu bar › *Settings…* (⌘,) has the everyday settings: gaps, row width, new window height and position, animation length, swipe sensitivity, direction, how a swipe comes to rest and glides, smooth scrolling, how windows at an edge are drawn and the live capture rate, and the three-finger double tap. Changes apply at once and are stored apart from the config file, on top of it (the file is left as you wrote it); *Reset to Config* drops them. Shortcuts and window rules stay in the config.
+
 ## Config (`~/.config/oz/config.js`)
 
 Plain JavaScript (JavaScriptCore), like PaperWM's `user.js`. Created from [examples/config.js](examples/config.js) on first launch and **reloaded automatically when you save**. To validate it:
@@ -150,7 +154,7 @@ oz.set({ doubleTap: { action: function () { oz.appExpose(); } } });
 
 **`oz` API:** `set`, `settings()`, `bind`, `rule`, `on` (`windowCreated`, `windowFocused`, `windowFloated`, `swipeEnded`, `spaceChanged`, `spaceTilingChanged`, `configLoaded`), `command(name, arg)`, a shortcut function per command (`oz.focusDown()`, `oz.setHeight(0.5)` …), `windows()`, `focusedWindow()`, `exec(cmd)` (in the background), `shell(cmd)` (returns the output), `notify(title, text)`, `log(...)`.
 
-**Commands:** `focusUp/Down/Left/Right/First/Last`, `focusRow(n)`, `moveUp/Down/Left/Right/First/Last`, `slurpIn`, `barfOut`, `joinUp`, `joinDown`, `cycleWidth`, `cycleWidthBack`, `setWidth(ratio)`, `resizeWidth(±ratio)`, `equalizeRow`, `cycleHeight`, `cycleHeightBack`, `setHeight(ratio|pt)`, `resizeHeight(±ratio)`, `toggleFullHeight`, `center`, `alignTop`, `scrollUp(ratio)`, `scrollDown(ratio)`, `scrollBy(pt)`, `scrollToTop`, `scrollToBottom`, `toggleFloat`, `toggleMaximize`, `closeWindow`, `moveToNextScreen`, `undo`, `retile`, `toggleTiling`, `toggleSpaceTiling`, `editScrollArea`, `reloadConfig`, `missionControl`, `appExpose`, `showDesktop`, `launchpad`.
+**Commands:** `focusUp/Down/Left/Right/First/Last`, `focusRow(n)`, `moveUp/Down/Left/Right/First/Last`, `slurpIn`, `barfOut`, `joinUp`, `joinDown`, `cycleWidth`, `cycleWidthBack`, `setWidth(ratio)`, `resizeWidth(±ratio)`, `equalizeRow`, `cycleHeight`, `cycleHeightBack`, `setHeight(ratio|pt)`, `resizeHeight(±ratio)`, `toggleFullHeight`, `center`, `alignTop`, `scrollUp(ratio)`, `scrollDown(ratio)`, `scrollBy(pt)`, `scrollToTop`, `scrollToBottom`, `toggleFloat`, `toggleMaximize`, `closeWindow`, `moveToNextScreen`, `undo`, `retile`, `toggleTiling`, `toggleSpaceTiling`, `editScrollArea`, `openSettings`, `reloadConfig`, `missionControl`, `appExpose`, `showDesktop`, `launchpad`.
 
 From the shell (skhd, Raycast, scripts…):
 

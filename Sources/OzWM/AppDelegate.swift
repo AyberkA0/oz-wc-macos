@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// as random hitches in swipes and animations.
     private var activity: NSObjectProtocol?
     private var areaEditor: ScrollAreaEditor?
+    private let settingsWindow = SettingsWindowController()
+    /// The settings as the config file has them, before the app's own changes go on top.
+    private var configSettings = Settings()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
@@ -68,16 +71,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         wm.reloadConfig = { [unowned self] in config.load() }
         wm.onEnabledChanged = { [weak self] _ in self?.updateStatusIcon() }
         wm.editScrollArea = { [weak self] screen in self?.openScrollAreaEditor(screen) }
+        wm.openSettings = { [weak self] in self?.openSettings() }
         config.onLoaded = { [unowned self] s in
-            var s = s
-            // The menu's choice wins over the config file's `livePeek`.
-            if let live = UserDefaults.standard.object(forKey: "livePeek") as? Bool { s.livePeek = live }
-            if let smooth = UserDefaults.standard.object(forKey: "smoothScroll") as? Bool { s.smoothScroll = smooth }
-            wm.settings = s
-            Log.debugEnabled = s.debug
-            gestures.configure(s)
-            if started { wm.settingsChanged() }
+            configSettings = s
+            applySettings()
         }
+        settingsWindow.apply = { [unowned self] _ in applySettings() }
+        settingsWindow.editConfig = { [unowned self] in editConfig() }
         config.load()
         config.watch()
         wm.start()
@@ -256,7 +256,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item("Retile", #selector(retile))
         }
         menu.addItem(.separator())
-        item("Edit Config", #selector(editConfig), key: ",")
+        item("Settings…", #selector(openSettings), key: ",")
+        item("Edit Config", #selector(editConfig))
         item("Reload Config", #selector(reloadConfig))
         item("Show Config Folder", #selector(revealConfig))
         item("Open Log", #selector(openLog))
@@ -270,6 +271,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item("Quit Oz", #selector(quit), key: "q")
     }
 
+    /// The config file's settings with the app's own changes (Settings window, menu) on top.
+    private func applySettings() {
+        var s = configSettings
+        s.apply(SettingsOverrides.all)
+        wm.settings = s
+        Log.debugEnabled = s.debug
+        gestures.configure(s)
+        if started { wm.settingsChanged() }
+        settingsWindow.refresh(s)
+    }
+
+    @objc private func openSettings() {
+        settingsWindow.show(current: wm.settings)
+    }
+
     @objc private func toggleTiling() { wm.setEnabled(!wm.enabled) }
     @objc private func toggleSpaceTiling() { wm.perform("toggleSpaceTiling") }
 
@@ -277,15 +293,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Off: one picture when a window starts to peek, shown as is.
     @objc private func toggleLivePeek() {
         let on = !wm.settings.livePeek
-        UserDefaults.standard.set(on, forKey: "livePeek")
+        SettingsOverrides.set(["livePeek"], on)
         wm.setLivePeek(on)
+        settingsWindow.refresh(wm.settings)
     }
 
     /// On: while the strip moves every window is a snapshot, the real ones move once at the end.
     @objc private func toggleSmoothScroll() {
         let on = !wm.settings.smoothScroll
-        UserDefaults.standard.set(on, forKey: "smoothScroll")
+        SettingsOverrides.set(["smoothScroll"], on)
         wm.setSmoothScroll(on)
+        settingsWindow.refresh(wm.settings)
     }
 
     @objc private func setScrollArea() {

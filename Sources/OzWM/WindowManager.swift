@@ -91,7 +91,7 @@ enum Command: String, CaseIterable {
     case cycleWidth, cycleWidthBack, setWidth, resizeWidth, equalizeRow
     case center, alignTop, scrollUp, scrollDown, scrollBy, scrollToTop, scrollToBottom
     case toggleFloat, toggleMaximize, closeWindow, moveToNextScreen, undo
-    case retile, toggleTiling, toggleSpaceTiling, editScrollArea, reloadConfig
+    case retile, toggleTiling, toggleSpaceTiling, editScrollArea, openSettings, reloadConfig
     case missionControl, appExpose, showDesktop, launchpad
 }
 
@@ -106,6 +106,8 @@ final class WindowManager {
     var onEnabledChanged: ((Bool) -> Void)?
     /// Opens the scroll area editor for a screen (owned by the app delegate).
     var editScrollArea: ((NSScreen) -> Void)?
+    /// Opens the Settings window (owned by the app delegate).
+    var openSettings: (() -> Void)?
 
     private var strips: [StripKey: Strip] = [:]
     private var windows: [CGWindowID: ManagedWindow] = [:]
@@ -2349,6 +2351,9 @@ final class WindowManager {
         }
         switch cmd {
         case .toggleTiling: setEnabled(!enabled); return true
+        case .openSettings:
+            openSettings?()
+            return true
         case .editScrollArea:
             guard enabled, let screen = Geometry.screenUnderMouse() else { return false }
             editScrollArea?(screen)
