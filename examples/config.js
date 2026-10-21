@@ -1,7 +1,7 @@
 // ~/.config/oz/config.js — Oz Window Manager
 //
 // Plain JavaScript, like PaperWM's user.js. Oz reloads it as soon as you save.
-// Errors show up in the Oz menu in the menu bar; log: ~/Library/Logs/OzWM.log
+// Errors show up in the Oz menu in the menu bar; log: ~/Library/Logs/OzWC.log
 //
 // Layout: the screen scrolls over a vertical strip of ROWS. A row holds one window or
 // several side by side (like panels on a comic book page).

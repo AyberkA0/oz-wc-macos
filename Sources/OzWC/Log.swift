@@ -3,10 +3,10 @@ import Foundation
 enum Log {
     static var debugEnabled = false
     static let url = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Logs/OzWM.log")
+        .appendingPathComponent("Library/Logs/OzWC.log")
 
     private static let queue = DispatchQueue(label: "oz.log")
-    /// Over this the log moves to OzWM.old.log and starts again (also while running: Oz is
+    /// Over this the log moves to OzWC.old.log and starts again (also while running: Oz is
     /// meant to stay open for weeks).
     private static let maxSize: UInt64 = 2_000_000
     private static var handle: FileHandle? = open()
@@ -24,7 +24,7 @@ enum Log {
     }
 
     private static func rotate() {
-        let old = url.deletingLastPathComponent().appendingPathComponent("OzWM.old.log")
+        let old = url.deletingLastPathComponent().appendingPathComponent("OzWC.old.log")
         try? FileManager.default.removeItem(at: old)
         try? FileManager.default.moveItem(at: url, to: old)
     }

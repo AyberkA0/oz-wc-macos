@@ -1,5 +1,5 @@
 #!/bin/bash
-# Oz WM trackpad setup.
+# Oz WC trackpad setup.
 #
 #   apply    3-finger vertical swipe -> free for Oz (Mission Control / App Exposé move to 4 fingers)
 #   restore  put back the values saved by `apply`

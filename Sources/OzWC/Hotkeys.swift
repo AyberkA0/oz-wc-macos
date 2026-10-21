@@ -34,7 +34,7 @@ final class HotkeyCenter {
         let id = nextID
         nextID += 1
         var ref: EventHotKeyRef?
-        let hkID = EventHotKeyID(signature: OSType(0x4F5A_574D), id: id) // 'OZWM'
+        let hkID = EventHotKeyID(signature: OSType(0x4F5A_5743), id: id) // 'OZWC'
         let status = RegisterEventHotKey(code, mods, hkID, GetApplicationEventTarget(), 0, &ref)
         guard status == noErr, let ref else { return false }
         refs.append(ref)

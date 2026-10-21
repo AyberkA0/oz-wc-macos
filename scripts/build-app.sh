@@ -6,12 +6,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 swift build -c release
-BIN="$(swift build -c release --show-bin-path)/OzWM"
+BIN="$(swift build -c release --show-bin-path)/OzWC"
 
 APP=build/Oz.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/OzWM"
+cp "$BIN" "$APP/Contents/MacOS/OzWC"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp scripts/trackpad-gestures.sh "$APP/Contents/Resources/trackpad-gestures.sh"
 chmod +x "$APP/Contents/Resources/trackpad-gestures.sh"
@@ -23,6 +23,6 @@ if [ -z "${SIGN_ID:-}" ]; then
     SIGN_ID="-"
   fi
 fi
-codesign --force --sign "$SIGN_ID" --identifier dev.oz.wm "$APP"
+codesign --force --sign "$SIGN_ID" --identifier dev.oz.wc "$APP"
 echo "signed with: $SIGN_ID"
 echo "built $APP"
