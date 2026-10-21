@@ -207,6 +207,11 @@ final class WindowManager {
     private var manualFloat = Set<CGWindowID>()
     /// Tiled windows the user is dragging by the mouse (our own moves aren't).
     private var userDragged: [CGWindowID: CFTimeInterval] = [:]
+    /// Tiled windows the user resized by an edge with the mouse, and when.
+    private var userResized: [CGWindowID: CFTimeInterval] = [:]
+    /// When Oz last put a window back to the size it gave it (see `compareFrame`): an app that
+    /// insists on its own width isn't fought over and over.
+    private var sizeEnforcedAt: [CGWindowID: CFTimeInterval] = [:]
     /// Floating windows being dragged (or a tab being torn off): placed when the mouse is let go.
     private var pendingDrops = Set<CGWindowID>()
     /// Where (AX coordinates) and when the left mouse button was last let go: a drag "lands"
@@ -458,6 +463,8 @@ final class WindowManager {
         for key in Array(pendingActivation.keys) where !live.contains(key) { pendingActivation.removeValue(forKey: key) }
         let now = CACurrentMediaTime()
         for (id, t) in userDragged where now - t > 10 { userDragged.removeValue(forKey: id) }
+        for (id, t) in userResized where now - t > 10 { userResized.removeValue(forKey: id) }
+        for (id, t) in sizeEnforcedAt where now - t > 10 { sizeEnforcedAt.removeValue(forKey: id) }
         for (id, t) in lastResnap where now - t > 10 || windows[id] == nil { lastResnap.removeValue(forKey: id) }
         for (id, t) in dockPlacedAt where now - t > 10 { dockPlacedAt.removeValue(forKey: id) }
         for key in Array(docks.keys) where docks[key]?.isEmpty ?? true { docks.removeValue(forKey: key) }
@@ -524,6 +531,19 @@ final class WindowManager {
         applyOpeningPreset(key)
     }
 
+    /// Checks, once things have settled, that a window Oz just placed is really there: an app
+    /// opening a window (Finder's opening animation, for one) can put it back where it wanted
+    /// after Oz moved it, while Oz took that move for its own and ignored it. Twice, as some
+    /// apps take a while.
+    private func verifyPlacement(_ id: CGWindowID) {
+        for delay in [0.8, 2.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, let w = self.windows[id] else { return }
+                self.scheduleFrameCheck(w)
+            }
+        }
+    }
+
     /// Windows arrive one by one as apps start: arrange once they've settled for a moment.
     private func schedulePresetApply(_ key: StripKey) {
         guard openingPreset[key] != nil else { return }
@@ -573,6 +593,7 @@ final class WindowManager {
         strip.renderScrollY = from
         relayout(key, animated: true)
         layoutDocks(key)
+        matched.forEach(verifyPlacement)
         let placed = matched.count + docked.values.joined().count
         if placed >= preset.desktop.windowIDs.count {
             openingPreset.removeValue(forKey: key)
@@ -1057,6 +1078,7 @@ final class WindowManager {
             }
             emit?("windowCreated", info(w))
         }
+        if mode == .created { verifyPlacement(wid) }
         schedulePresetApply(key)
     }
 
@@ -1070,6 +1092,8 @@ final class WindowManager {
         forgetFloating(id)
         userDragged.removeValue(forKey: id)
         lastResnap.removeValue(forKey: id)
+        userResized.removeValue(forKey: id)
+        sizeEnforcedAt.removeValue(forKey: id)
         minHeights.removeValue(forKey: id)
         guard let w = windows.removeValue(forKey: id) else { return }
         w.frameCheck?.cancel()
@@ -1153,6 +1177,7 @@ final class WindowManager {
             if notification == kAXWindowResizedNotification && mouseDown {
                 // Resizing, not moving: no landing place to show.
                 resizeDrag = w.id
+                userResized[w.id] = CACurrentMediaTime()
                 if dragging == w.id { dragging = nil; dropPreview.hide() }
                 trackLiveResize(w)
             }
@@ -1419,7 +1444,20 @@ final class WindowManager {
         }
         // (Narrowing from the left edge moves the window sideways too: only its top must stay.)
         if moved || resizedW || resizedH { recordUndo(key) }
-        if resizedW && !resizedH && abs(actual.minY - expected.minY) <= 3 {
+        let byUser = userResized.removeValue(forKey: w.id).map { now - $0 < 3 } ?? false
+        if resizedW && !byUser {
+            // The app changed the width itself (a window opening, an app's own resize): not
+            // the user narrowing it. Put it back in its place at its size. An app that insists
+            // on its width (asked again within 5 s) keeps it, but still goes back to its place
+            // in the strip below, rather than being fought over every time.
+            if now - (sizeEnforcedAt[w.id] ?? 0) > 5 {
+                sizeEnforcedAt[w.id] = now
+                Log.debug("window \(w.id) \(w.appName) moved/resized by its app; putting it back")
+                w.lastFrame = nil
+                relayout(key, animated: false)
+                return
+            }
+        } else if resizedW && !resizedH && abs(actual.minY - expected.minY) <= 3 {
             // Width changed without the live path (a quick drag): same rules as live resizing.
             let rowWidth = viewport(screen).width * settings.width
             if strip.rows[r].windows.count > 1 {
