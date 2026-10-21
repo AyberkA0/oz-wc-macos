@@ -90,7 +90,7 @@ enum Command: String, CaseIterable {
     case cycleHeight, cycleHeightBack, setHeight, toggleFullHeight, resizeHeight
     case cycleWidth, cycleWidthBack, setWidth, resizeWidth, equalizeRow
     case center, alignTop, scrollUp, scrollDown, scrollBy, scrollToTop, scrollToBottom
-    case toggleFloat, toggleMaximize, closeWindow, moveToNextScreen
+    case toggleFloat, toggleMaximize, closeWindow, moveToNextScreen, undo
     case retile, toggleTiling, toggleSpaceTiling, editScrollArea, reloadConfig
     case missionControl, appExpose, showDesktop, launchpad
 }
@@ -181,6 +181,9 @@ final class WindowManager {
     /// that desktop's windows are seen after Oz starts.
     private var pendingRestore: [String: StripState] = LayoutStore.load()
     private var lastSavedLayout: Data?
+    /// Per strip, its arrangement before each of the last layout changes, for `undo`.
+    private var undoStacks: [StripKey: [StripState]] = [:]
+    private static let undoDepth = 20
     private var saveTimer: Timer?
     /// A double click just landed on this window's title bar; its app may zoom it.
     private var zoomClick: (id: CGWindowID, key: StripKey, frame: CGRect)?
@@ -344,6 +347,47 @@ final class WindowManager {
             }
         }
         return out
+    }
+
+    // MARK: Undo
+
+    /// Remembers the strip's arrangement before a change (unless it's the same as last time).
+    private func recordUndo(_ key: StripKey) {
+        guard let strip = strips[key] else { return }
+        let state = strip.state()
+        var stack = undoStacks[key] ?? []
+        if stack.last == state { return }
+        stack.append(state)
+        if stack.count > Self.undoDepth { stack.removeFirst(stack.count - Self.undoDepth) }
+        undoStacks[key] = stack
+    }
+
+    /// Puts the strip back as it was before its last change, sliding the windows there.
+    /// Windows taken out of it since (dragged out, floated) come back; closed ones are skipped.
+    private func undo(_ key: StripKey, strip s: Strip, viewportHeight vh: CGFloat) -> Bool {
+        guard var stack = undoStacks[key] else { return false }
+        // Skip states that are what's on screen now (a change that didn't change anything).
+        var target: StripState?
+        while let last = stack.popLast() {
+            if last != s.state() { target = last; break }
+        }
+        undoStacks[key] = stack.isEmpty ? nil : stack
+        guard let target else { return false }
+        beginTransition(key, recordUndo: false)
+        for saved in target.rows.flatMap(\.windows) where windows[saved.id] == nil {
+            guard let w = floating[saved.id], manualFloat.contains(saved.id) else { continue }
+            undock(saved.id)
+            floating.removeValue(forKey: saved.id)
+            manualFloat.remove(saved.id)
+            windows[saved.id] = w
+            s.insertRow(saved.id, height: vh / 2, before: nil)
+            if settings.animationDuration > 0, let f = w.lastFrame { pendingFrom[key, default: [:]][saved.id] = f }
+        }
+        s.restore(target, maxHeight: vh) { w, used in s.contains(w.id) && !used.contains(w.id) ? w.id : nil }
+        s.scrollY = s.clampScroll(s.scrollY, viewportHeight: vh, gap: settings.gap)
+        Log.debug("undo: \(undoStacks[key]?.count ?? 0) step(s) left")
+        relayout(key, animated: true)
+        return true
     }
 
     // MARK: Saved layout
@@ -568,6 +612,7 @@ final class WindowManager {
         pendingActivation.removeValue(forKey: key)
         maximized.removeValue(forKey: key)
         docks.removeValue(forKey: key)
+        undoStacks.removeValue(forKey: key)
         dirty.remove(key)
         var offset: CGFloat = 0
         let hidden = restoreFrames(strip, key: key, offset: &offset)
@@ -605,6 +650,7 @@ final class WindowManager {
             maximized.removeAll()
             zoomClick = nil
             manualFloat.removeAll()
+            undoStacks.removeAll()
             userDragged.removeAll()
             dragging = nil
             dropPreview.hide()
@@ -1098,6 +1144,7 @@ final class WindowManager {
             return
         }
         // (Narrowing from the left edge moves the window sideways too: only its top must stay.)
+        if moved || resizedW || resizedH { recordUndo(key) }
         if resizedW && !resizedH && abs(actual.minY - expected.minY) <= 3 {
             // Width changed without the live path (a quick drag): same rules as live resizing.
             let rowWidth = viewport(screen).width * settings.width
@@ -1543,6 +1590,7 @@ final class WindowManager {
             guard let expected = w.lastFrame, !f.approxEqual(expected, tolerance: 2),
                   NSEvent.pressedMouseButtons & 1 != 0 else { return }
             liveResize = (id, key)
+            recordUndo(key)
             Log.debug("live resize \(id) \(w.appName)")
         }
         let vp = viewport(screen)
@@ -1763,7 +1811,9 @@ final class WindowManager {
 
     /// A command is about to rearrange the strip: remember where its windows are, so the
     /// animated relayout that follows slides them to their new places.
-    private func beginTransition(_ key: StripKey) {
+    private func beginTransition(_ key: StripKey, recordUndo record: Bool = true) {
+        // Every rearrangement that slides starts here: remember how it was, for undo.
+        if record { recordUndo(key) }
         // Already recorded for this command (e.g. before un-maximizing): keep the earlier frames.
         guard settings.animationDuration > 0, gesture?.key != key, pendingFrom[key] == nil,
               visibleScreen(key) != nil else { return }
@@ -2298,7 +2348,7 @@ final class WindowManager {
         // Rearranging the strip brings a full-screen window back into it first.
         let keepsMaximized: Set<Command> = [.focusUp, .focusDown, .focusLeft, .focusRight, .focusFirst, .focusLast,
                                             .focusRow, .center, .alignTop, .scrollUp, .scrollDown, .scrollBy,
-                                            .scrollToTop, .scrollToBottom, .closeWindow, .toggleMaximize]
+                                            .scrollToTop, .scrollToBottom, .closeWindow, .toggleMaximize, .undo]
         if maximizedID(c.key) != nil && !keepsMaximized.contains(cmd) {
             beginTransition(c.key)
             maximized[c.key] = nil
@@ -2441,6 +2491,8 @@ final class WindowManager {
 
         case .toggleFloat:
             toggleFloat(c)
+        case .undo:
+            return undo(c.key, strip: s, viewportHeight: c.vh)
         case .toggleMaximize:
             guard let id = c.id else { return false }
             setMaximized(id, maximizedID(c.key) != id)

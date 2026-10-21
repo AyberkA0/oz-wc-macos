@@ -58,6 +58,7 @@ The ▤ menu bar icon: toggle tiling, toggle tiling for this desktop, live captu
 - The same from the keyboard: in a single-window row `cycleWidth` (`⌃⌥ w`) cycles the share 1/3 → 1/2 → 2/3 → full, `resizeWidth` (`⌃⌥ , / .`) narrows/widens in steps, `equalizeRow` (`⌃⌥ =`) goes back to full width.
 - While you resize a window, its neighbours make room live.
 - **Double click a title bar** (macOS zoom): the window fills the whole usable screen (not just the Oz zone, over the regions around it too) while the rest of the strip stays as it was behind it; double click again and it slides back into its place. Same as `toggleMaximize` (`⌃⌥⇧ f`). Rearranging the strip (moves, joins, sizes) puts it back first.
+- **Undo** (`⌃⌥ z`): puts the strip back as it was before its last change — keyboard moves and sizes, drags and drops, mouse resizes, a window dragged out of the zone (it comes back) — up to 20 steps, sliding the windows back.
 - Keyboard moves (`moveUp/Down/Left/Right`, joins, width/height changes, floating) slide the windows to their new places over `animationDuration` instead of jumping.
 
 ## Scroll area
@@ -112,7 +113,7 @@ Keys are resolved in the active keyboard layout; the defaults are for a US layou
 | `⌃⌥ n` | move to the next screen | | `⌃⌥ m` / `⌃⌥⇧ m` | Mission Control / App Exposé |
 | `⌃⌥⇧ t` | toggle tiling | | `⌃⌥⇧ esc` | toggle tiling for this desktop |
 | `⌃⌥⇧ c` | reload the config | | `⌃⌥⇧ a` | set this desktop's scroll area |
-| `⌃⌥ /` | shortcut cheat sheet | | | |
+| `⌃⌥ /` | shortcut cheat sheet | | `⌃⌥ z` | undo the last layout change |
 
 ## Config (`~/.config/oz/config.js`)
 
@@ -149,7 +150,7 @@ oz.set({ doubleTap: { action: function () { oz.appExpose(); } } });
 
 **`oz` API:** `set`, `settings()`, `bind`, `rule`, `on` (`windowCreated`, `windowFocused`, `windowFloated`, `swipeEnded`, `spaceChanged`, `spaceTilingChanged`, `configLoaded`), `command(name, arg)`, a shortcut function per command (`oz.focusDown()`, `oz.setHeight(0.5)` …), `windows()`, `focusedWindow()`, `exec(cmd)` (in the background), `shell(cmd)` (returns the output), `notify(title, text)`, `log(...)`.
 
-**Commands:** `focusUp/Down/Left/Right/First/Last`, `focusRow(n)`, `moveUp/Down/Left/Right/First/Last`, `slurpIn`, `barfOut`, `joinUp`, `joinDown`, `cycleWidth`, `cycleWidthBack`, `setWidth(ratio)`, `resizeWidth(±ratio)`, `equalizeRow`, `cycleHeight`, `cycleHeightBack`, `setHeight(ratio|pt)`, `resizeHeight(±ratio)`, `toggleFullHeight`, `center`, `alignTop`, `scrollUp(ratio)`, `scrollDown(ratio)`, `scrollBy(pt)`, `scrollToTop`, `scrollToBottom`, `toggleFloat`, `toggleMaximize`, `closeWindow`, `moveToNextScreen`, `retile`, `toggleTiling`, `toggleSpaceTiling`, `editScrollArea`, `reloadConfig`, `missionControl`, `appExpose`, `showDesktop`, `launchpad`.
+**Commands:** `focusUp/Down/Left/Right/First/Last`, `focusRow(n)`, `moveUp/Down/Left/Right/First/Last`, `slurpIn`, `barfOut`, `joinUp`, `joinDown`, `cycleWidth`, `cycleWidthBack`, `setWidth(ratio)`, `resizeWidth(±ratio)`, `equalizeRow`, `cycleHeight`, `cycleHeightBack`, `setHeight(ratio|pt)`, `resizeHeight(±ratio)`, `toggleFullHeight`, `center`, `alignTop`, `scrollUp(ratio)`, `scrollDown(ratio)`, `scrollBy(pt)`, `scrollToTop`, `scrollToBottom`, `toggleFloat`, `toggleMaximize`, `closeWindow`, `moveToNextScreen`, `undo`, `retile`, `toggleTiling`, `toggleSpaceTiling`, `editScrollArea`, `reloadConfig`, `missionControl`, `appExpose`, `showDesktop`, `launchpad`.
 
 From the shell (skhd, Raycast, scripts…):
 

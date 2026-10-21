@@ -137,6 +137,7 @@ bind(S + "+t", "toggleTiling");          // everywhere
 bind(S + "+escape", "toggleSpaceTiling"); // just this desktop (floating desktop), remembered
 bind(S + "+a", "editScrollArea");      // set the part of the screen this desktop scrolls in
 bind(S + "+c", "reloadConfig");
+bind(M + "+z", "undo");               // undo the last layout change (moves, sizes, drags)
 
 // Shortcut cheat sheet (⌃⌥ + K.help)
 oz.bind(M + "+" + K.help, function () {
