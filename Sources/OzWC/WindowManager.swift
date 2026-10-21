@@ -1582,6 +1582,9 @@ final class WindowManager {
     /// around the zone, it is tiled in that region; anywhere else it stays put.
     private func drop(_ id: CGWindowID, at frame: CGRect?) {
         guard enabled, let frame, let w = floating[id], manualFloat.contains(id) else { return }
+        // Where the user left it, not where Oz last put it: a window dropped back into its own
+        // region still has to be fitted there again.
+        w.lastFrame = frame
         let point = dropPoint(frame)
         guard let (key, screen) = dropTarget(point) else {
             if !dock(w, at: point) { undock(id) }
