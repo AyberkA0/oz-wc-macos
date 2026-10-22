@@ -216,13 +216,27 @@ final class StripTests: XCTestCase {
         XCTAssertEqual(s.scrollToReveal(3, viewportHeight: vh, gap: 10), 505)
         s.scrollY = 900
         XCTAssertEqual(s.scrollToReveal(2, viewportHeight: vh, gap: 10), 505)
-        // Snap targets are row tops, capped at max scroll (content 2010 - 1000).
+        // Row tops, capped at max scroll (content 2010 - 1000).
         XCTAssertEqual(s.snapTargets(viewportHeight: vh, gap: 10), [0, 505, 1010])
+    }
+
+    func testMagneticSnapBringsCutWindowsIn() {
+        // Rows at 0-495, 505-1000, 1010-1505, 1515-2010; screen 1000 tall, max scroll 1010.
+        let s = makeStrip([495, 495, 495, 495])
+        // At 300 row 0 is cut at the top (0) and row 2 at the bottom (1505 - 1000 = 505).
+        // Still: the nearer one; moving: the side it moves towards.
         XCTAssertEqual(s.snapTarget(from: 300, velocity: 0, viewportHeight: vh, gap: 10), 505)
         XCTAssertEqual(s.snapTarget(from: 200, velocity: 0, viewportHeight: vh, gap: 10), 0)
-        // A flick always advances at least one panel in its direction.
-        XCTAssertEqual(s.snapTarget(from: 30, velocity: 900, viewportHeight: vh, gap: 10), 505)
-        XCTAssertEqual(s.snapTarget(from: 480, velocity: -900, viewportHeight: vh, gap: 10), 0)
+        XCTAssertEqual(s.snapTarget(from: 200, velocity: 200, viewportHeight: vh, gap: 10), 505)
+        XCTAssertEqual(s.snapTarget(from: 400, velocity: -200, viewportHeight: vh, gap: 10), 0)
+        // Nothing cut (both edges on whole windows): stays.
+        XCTAssertEqual(s.snapTarget(from: 505, velocity: 0, viewportHeight: vh, gap: 10), 505)
+        // Only the bottom one cut: its bottom goes to the bottom edge, not its top to the top.
+        let two = makeStrip([300, 900])
+        XCTAssertEqual(two.snapTarget(from: 0, velocity: 0, viewportHeight: vh, gap: 10), 210)
+        // A window taller than the screen isn't pulled to.
+        let tall = makeStrip([400, 1500, 400])
+        XCTAssertEqual(tall.snapTarget(from: 900, velocity: 0, viewportHeight: vh, gap: 10), 900)
     }
 
     func testFreeScrollSnapsOnlyNearEdges() {

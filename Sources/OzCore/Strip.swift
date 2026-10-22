@@ -39,7 +39,7 @@ public enum TopOverflow: String {
 
 /// How a swipe comes to rest.
 public enum SnapMode: String {
-    /// Always land with a row on the top edge (one panel at a time).
+    /// Always land with no window cut off at an edge (unless it is taller than the screen).
     case always
     /// Glide freely; settle on a window edge only when released close to one.
     case near
@@ -460,20 +460,30 @@ public final class Strip {
         return nearest
     }
 
-    /// Where a swipe released at `s` with `velocity` (points/s, positive = scrolling down) should land.
+    /// Where a swipe released at `s` with `velocity` (points/s, positive = scrolling down)
+    /// should land: where the glide would stop, moved just enough that the window cut off at
+    /// an edge comes fully in, its top on the top edge or its bottom on the bottom edge.
+    /// With windows cut at both edges the swipe's direction picks (down: the one below),
+    /// released still the nearer one. A window taller than the screen can't come fully in
+    /// and isn't pulled to.
     public func snapTarget(from s: CGFloat, velocity: CGFloat, viewportHeight vh: CGFloat, gap: CGFloat) -> CGFloat {
-        let targets = snapTargets(viewportHeight: vh, gap: gap)
-        let projected = s + velocity * 0.2
-        var candidates = targets
-        let flick = vh * 0.5
-        if velocity > flick {
-            candidates = targets.filter { $0 > s + 1 }
-            if candidates.isEmpty { candidates = [targets.last!] }
-        } else if velocity < -flick {
-            candidates = targets.filter { $0 < s - 1 }
-            if candidates.isEmpty { candidates = [targets.first!] }
+        let p = clampScroll(s + velocity * 0.2, viewportHeight: vh, gap: gap).rounded()
+        var up: CGFloat?, down: CGFloat?
+        for i in rows.indices where rows[i].height <= vh + 1 {
+            let top = rowTop(i, gap: gap), bottom = top + rows[i].height
+            if top < p - 1 && bottom > p + 1 { up = top }
+            if top < p + vh - 1 && bottom > p + vh + 1 { down = bottom - vh }
         }
-        return candidates.min { abs($0 - projected) < abs($1 - projected) }!
+        let target: CGFloat
+        switch (up, down) {
+        case let (u?, d?):
+            let still = abs(velocity) < vh * 0.1
+            target = still ? (p - u <= d - p ? u : d) : (velocity > 0 ? d : u)
+        case let (u?, nil): target = u
+        case let (nil, d?): target = d
+        default: target = p
+        }
+        return clampScroll(target, viewportHeight: vh, gap: gap)
     }
 
     /// Topmost row fully visible at scroll `s` (or the row covering the top edge).
