@@ -355,6 +355,20 @@ private final class StandInPanel: NSPanel {
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 
+/// The board's content: a click (not a press that turns into a drag) on it.
+private final class BoardView: NSView {
+    var onClick: ((CGPoint) -> Void)?
+    private var downAt: NSPoint?
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { downAt = event.locationInWindow }
+    override func mouseUp(with event: NSEvent) {
+        defer { downAt = nil }
+        guard let d = downAt else { return }
+        let p = event.locationInWindow
+        if hypot(p.x - d.x, p.y - d.y) <= 4 { onClick?(convert(p, from: nil)) }
+    }
+}
+
 /// Click target for a peeking window: clicking the visible strip brings the real window back.
 /// A click, not a press: acting on mouse down started scrolling while the button was still
 /// held, and a press that turns into a drag isn't a click.
@@ -374,8 +388,11 @@ private final class PeekView: NSView {
 /// One transparent window over a whole screen that every stand-in is drawn into while the
 /// strip moves: each frame moves layers inside it, in one Core Animation commit, instead of
 /// moving one window per stand-in (each a separate trip to the window server, so they didn't
-/// all land in the same frame). It takes no clicks, follows the Space you are on and stays
-/// out of Mission Control (`.transient`).
+/// all land in the same frame). It follows the Space you are on and stays out of Mission
+/// Control (`.transient`). While it holds pictures it takes clicks on them (a picture still up
+/// after a scroll is the window as far as the user can tell; let through, the click hit the
+/// desktop behind and macOS took it for "show desktop"); its transparent rest lets clicks
+/// through to whatever is below.
 private final class Board {
     let window: StandInPanel
     let root: CALayer
@@ -383,6 +400,11 @@ private final class Board {
     /// The window it was last ordered just below (a window being dragged), if any.
     var orderedBelow: CGWindowID?
     var ordered = false
+    /// A click at this point (the board's layer coordinates).
+    var onClick: ((CGPoint) -> Void)? {
+        get { (window.contentView as? BoardView)?.onClick }
+        set { (window.contentView as? BoardView)?.onClick = newValue }
+    }
 
     init(screen: NSScreen) {
         displayID = Geometry.displayID(screen)
@@ -397,7 +419,7 @@ private final class Board {
         window.isReleasedWhenClosed = false
         window.animationBehavior = .none
         window.collectionBehavior = [.transient, .ignoresCycle, .fullScreenNone]
-        let view = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        let view = BoardView(frame: NSRect(origin: .zero, size: screen.frame.size))
         view.wantsLayer = true
         window.contentView = view
         root = view.layer!
@@ -420,6 +442,7 @@ private final class Board {
     /// a click on the wallpaper for one (no more "click wallpaper to reveal desktop").
     func cover(_ on: Bool) {
         let frame = on ? screenFrame : NSRect(x: screenFrame.minX, y: screenFrame.minY, width: 1, height: 1)
+        if window.ignoresMouseEvents == on { window.ignoresMouseEvents = !on }
         guard window.frame != frame else { return }
         window.setFrame(frame, display: false)
     }
@@ -530,6 +553,14 @@ final class OverlayManager {
         if let b = boards[id], b.screenFrame == screen.frame { return b }
         boards[id]?.window.orderOut(nil)
         let b = Board(screen: screen)
+        b.onClick = { [weak self, weak b] p in
+            guard let self, let b else { return }
+            // The topmost picture there, as clicking that window.
+            let hit = self.overlays.first { _, o in
+                o.board === b && o.shown && o.boardClip.superlayer != nil && o.boardClip.frame.contains(p)
+            }
+            if let (id, _) = hit { self.onClick?(id) }
+        }
         boards[id] = b
         return b
     }
