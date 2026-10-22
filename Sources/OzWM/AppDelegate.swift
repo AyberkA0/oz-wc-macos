@@ -135,7 +135,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]] ?? []
         for info in list {
-            guard (info[kCGWindowLayer as String] as? Int) == 0, let b = info[kCGWindowBounds as String] else { continue }
+            // Oz's own (the boards span whole screens) are never what the user swipes on.
+            guard (info[kCGWindowLayer as String] as? Int) == 0, (info[kCGWindowOwnerPID as String] as? pid_t) != getpid(),
+                  let b = info[kCGWindowBounds as String] else { continue }
             var r = CGRect.zero
             CGRectMakeWithDictionaryRepresentation(b as! CFDictionary, &r)
             if r.contains(p) { return (info[kCGWindowOwnerPID as String] as? pid_t) == front }

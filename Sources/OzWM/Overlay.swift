@@ -357,6 +357,58 @@ private final class PeekView: NSView {
     }
 }
 
+/// One transparent window over a whole screen that every stand-in is drawn into while the
+/// strip moves: each frame moves layers inside it, in one Core Animation commit, instead of
+/// moving one window per stand-in (each a separate trip to the window server, so they didn't
+/// all land in the same frame). It takes no clicks, follows the Space you are on and stays
+/// out of Mission Control (`.transient`).
+private final class Board {
+    let window: StandInPanel
+    let root: CALayer
+    let displayID: CGDirectDisplayID
+    /// The window it was last ordered just below (a window being dragged), if any.
+    var orderedBelow: CGWindowID?
+    var ordered = false
+
+    init(screen: NSScreen) {
+        displayID = Geometry.displayID(screen)
+        window = StandInPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
+                              backing: .buffered, defer: false)
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false
+        window.ignoresMouseEvents = true
+        window.level = .normal
+        window.isReleasedWhenClosed = false
+        window.animationBehavior = .none
+        window.collectionBehavior = [.transient, .ignoresCycle, .fullScreenNone]
+        let view = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        view.wantsLayer = true
+        window.contentView = view
+        root = view.layer!
+        window.setFrame(screen.frame, display: false)
+    }
+
+    /// `r` (AX coordinates) in the board's layer coordinates.
+    func local(_ r: CGRect) -> CGRect {
+        let f = Geometry.ax(window.frame)
+        return CGRect(x: r.minX - f.minX, y: f.maxY - r.maxY, width: r.width, height: r.height)
+    }
+
+    /// In front of the windows (or just below one being dragged). `again`: windows may have
+    /// come forward since (an app activated), so order it even if nothing changed.
+    func order(below: CGWindowID?, again: Bool = false) {
+        guard again || !ordered || orderedBelow != below else { return }
+        if let below {
+            window.order(.below, relativeTo: Int(below))
+        } else {
+            window.orderFrontRegardless()
+        }
+        ordered = true
+        orderedBelow = below
+    }
+}
+
 final class OverlayManager {
     /// Called with the window id when the user clicks a peeking window.
     var onClick: ((CGWindowID) -> Void)?
@@ -366,9 +418,15 @@ final class OverlayManager {
     /// Resolution of live frames (the `captureScale` setting).
     var captureScale: CGFloat = 1
 
+    /// A window's stand-in: its picture, drawn either in a window of its own (at rest, where
+    /// it takes clicks) or on its screen's board (while things move). Both hold a layer with
+    /// the same picture, so moving from one to the other never leaves a frame without it.
     private final class Overlay {
         let window: NSPanel
         let imageLayer = CALayer()
+        /// The same picture on a board: a clipping layer (the visible part) holding it.
+        let boardClip = CALayer()
+        let boardImage = CALayer()
         var image: CGImage?
         var mirror: LiveMirror?
         /// Set once live frames arrive; the still snapshot is no longer drawn.
@@ -379,13 +437,16 @@ final class OverlayManager {
         var unchangedFrames = 0
         /// Row size the stand-in represents (the window may be taller if the app refused).
         var expectedSize = CGSize.zero
-        /// Where the whole window lies in the overlay window (its own coordinates, y up): the
-        /// part outside the overlay's bounds is cut off.
+        /// Where the whole window lies in the visible part shown (its own coordinates, y up):
+        /// the part outside is cut off.
         var contentFrame = CGRect.zero
         /// Drawn and clickable. A hidden overlay stays ordered in, transparent and click-through:
         /// taking a window off screen (`orderOut`) and back is a window-server round trip that
         /// stalled the main thread for up to half a second, many times per swipe.
         var shown = false
+        /// Drawn in its own window (at rest), or on this board (moving).
+        var inWindow = false
+        var board: Board?
         /// The window it was last ordered just below (a window being dragged), if any.
         var orderedBelow: CGWindowID?
         var fading = false
@@ -398,7 +459,8 @@ final class OverlayManager {
             window.isOpaque = false
             window.backgroundColor = .clear
             window.hasShadow = false
-            window.ignoresMouseEvents = false
+            window.ignoresMouseEvents = true
+            window.alphaValue = 0
             window.level = .normal
             window.isReleasedWhenClosed = false
             window.animationBehavior = .none
@@ -408,38 +470,64 @@ final class OverlayManager {
             let view = PeekView()
             view.wantsLayer = true
             view.layer?.masksToBounds = true
-            imageLayer.contentsGravity = .resize
-            imageLayer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
+            let still: [String: CAAction] = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
+            for layer in [imageLayer, boardImage] {
+                layer.contentsGravity = .resize
+                layer.actions = still
+            }
+            boardClip.masksToBounds = true
+            boardClip.actions = ["bounds": NSNull(), "position": NSNull(), "opacity": NSNull()]
+            boardClip.addSublayer(boardImage)
             view.layer?.addSublayer(imageLayer)
             window.contentView = view
+        }
+
+        func setImage(_ image: CGImage?) {
+            self.image = image
+            imageLayer.contents = image
+            boardImage.contents = image
         }
     }
 
     private var overlays: [CGWindowID: Overlay] = [:]
     private var pendingHide: [CGWindowID: DispatchWorkItem] = [:]
+    private var boards: [CGDirectDisplayID: Board] = [:]
+
+    private func board(for r: CGRect) -> Board? {
+        guard let screen = Geometry.screen(containingAX: CGPoint(x: r.midX, y: r.midY)) else { return nil }
+        let id = Geometry.displayID(screen)
+        if let b = boards[id], Geometry.ax(b.window.frame) == Geometry.ax(screen.frame) { return b }
+        boards[id]?.window.orderOut(nil)
+        let b = Board(screen: screen)
+        boards[id] = b
+        return b
+    }
 
     /// Shows `image` as if the window were at `full` (AX coordinates), cut off above `clipTop`
     /// and below `clipBottom`. Also used as a stand-in for a whole window (a slow app's window
     /// while scrolling): then `full` lies between the two and nothing is cut off.
     /// `stream`: keep it live (if live peeks are on); stand-ins during a scroll don't.
+    /// `moving`: drawn on the screen's board, in step with every other stand-in; at rest in
+    /// a window of its own, which takes clicks.
     /// `below`: a window being dragged, which must stay on top of the stand-ins.
     func show(_ id: CGWindowID, image: CGImage, full: CGRect, clipTop: CGFloat,
               clipBottom: CGFloat = .greatestFiniteMagnitude, trueColor: Bool = false,
-              stream: Bool = true, below: CGWindowID? = nil) {
+              stream: Bool = true, moving: Bool = false, below: CGWindowID? = nil) {
         if let o = overlays[id], o.fading {
             // Shown again while fading out: replace the running fade, or it would carry on to
             // zero and leave the stand-in invisible over a parked window (the window "vanished").
             o.fading = false
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0
-                o.window.animator().alphaValue = 1
+                o.window.animator().alphaValue = o.inWindow ? 1 : 0
             }
-            o.window.alphaValue = 1
+            o.window.alphaValue = o.inWindow ? 1 : 0
+            o.boardClip.removeAllAnimations()
+            o.boardClip.opacity = 1
         }
         let top = max(clipTop, full.minY)
         let bottom = min(clipBottom, full.maxY)
-        let visibleHeight = bottom - top
-        guard visibleHeight > 0 else { return hide(id) }
+        guard bottom - top > 0 else { return hide(id) }
         pendingHide.removeValue(forKey: id)?.cancel()
         let o: Overlay
         if let existing = overlays[id] {
@@ -455,32 +543,10 @@ final class OverlayManager {
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        if !o.isLive && o.image !== image {
-            o.image = image
-            o.imageLayer.contents = image
-        }
-        o.imageLayer.contentsScale = o.window.backingScaleFactor
-        place(o, full: full, top: top, bottom: bottom)
+        if !o.isLive && o.image !== image { o.setImage(image) }
+        o.shown = true
+        place(o, full: full, top: top, bottom: bottom, onBoard: moving, below: below)
         CATransaction.commit()
-
-        if !o.shown {
-            o.shown = true
-            o.window.alphaValue = 1
-            // Always takes clicks while shown: a stand-in still up when the motion is over is
-            // the window as far as the user can tell (click-through, clicks hit the desktop).
-            o.window.ignoresMouseEvents = false
-            // Over the windows that came forward while it was hidden, but under a dragged one.
-            if let below {
-                o.window.order(.below, relativeTo: Int(below))
-            } else {
-                o.window.orderFrontRegardless()
-            }
-            o.orderedBelow = below
-        } else if let below, o.orderedBelow != below {
-            // Already showing when a drag started: tuck it under the dragged window once.
-            o.window.order(.below, relativeTo: Int(below))
-            o.orderedBelow = below
-        }
     }
 
     /// Streams the window into the overlay. After ~2 s of identical frames (nothing
@@ -506,8 +572,7 @@ final class OverlayManager {
             o.unchangedFrames = 0
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            o.imageLayer.contents = image
-            o.image = image
+            o.setImage(image)
             OverlayManager.layoutImage(o)
             CATransaction.commit()
             o.isLive = true
@@ -526,17 +591,71 @@ final class OverlayManager {
         let iw = CGFloat(image.width), ih = CGFloat(image.height)
         let scale = max(row.width / iw, row.height / ih)
         let w = (iw * scale).rounded(), h = (ih * scale).rounded()
-        o.imageLayer.frame = CGRect(x: row.minX, y: row.maxY - h, width: w, height: h)
+        let frame = CGRect(x: row.minX, y: row.maxY - h, width: w, height: h)
+        o.imageLayer.frame = frame
+        o.boardImage.frame = frame
     }
 
-    /// Puts the overlay window over the visible part (`top`...`bottom`) of a window at `full`
-    /// (AX coordinates) and lays the picture out inside. In a Core Animation transaction.
-    private func place(_ o: Overlay, full: CGRect, top: CGFloat, bottom: CGFloat) {
+    /// Draws the visible part (`top`...`bottom`) of a window at `full` (AX coordinates): on
+    /// its screen's board, or in its own window. Switching from the board to the window, the
+    /// board's copy goes a moment after the window shows, so no frame is without it. In a
+    /// Core Animation transaction.
+    private func place(_ o: Overlay, full: CGRect, top: CGFloat, bottom: CGFloat, onBoard: Bool, below: CGWindowID?) {
         o.contentFrame = CGRect(x: 0, y: bottom - full.maxY, width: full.width, height: full.height)
         OverlayManager.layoutImage(o)
+        let visible = CGRect(x: full.minX, y: top, width: full.width, height: bottom - top)
+        if onBoard, let b = board(for: visible) {
+            // The first stand-in of a motion: bring the board forward again.
+            let first = b.root.sublayers?.isEmpty ?? true
+            if o.board !== b {
+                o.boardClip.removeFromSuperlayer()
+                b.root.addSublayer(o.boardClip)
+                o.board = b
+            }
+            o.boardClip.opacity = 1
+            o.boardImage.contentsScale = b.window.backingScaleFactor
+            o.boardClip.frame = b.local(visible)
+            b.order(below: below, again: first)
+            if o.inWindow {
+                // Moving on: the window's copy goes (the board's is already up, this commit).
+                o.inWindow = false
+                o.window.alphaValue = 0
+                o.window.ignoresMouseEvents = true
+            }
+            return
+        }
+        o.imageLayer.contentsScale = o.window.backingScaleFactor
         // Layer-backed content: no need to force a synchronous redraw every frame.
         o.window.setFrame(NSRect(x: full.minX, y: Geometry.primaryHeight - bottom, width: full.width, height: bottom - top),
                           display: false)
+        if !o.inWindow {
+            o.inWindow = true
+            o.window.alphaValue = 1
+            // Takes clicks: at rest a stand-in is the window as far as the user can tell.
+            o.window.ignoresMouseEvents = false
+            o.orderedBelow = nil
+            if let below {
+                o.window.order(.below, relativeTo: Int(below))
+            } else {
+                o.window.orderFrontRegardless()
+            }
+            o.orderedBelow = below
+            if o.board != nil {
+                // The window takes a frame or so to show: the board's copy stays until then.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak o] in
+                    guard let o, o.inWindow else { return }
+                    CATransaction.begin()
+                    CATransaction.setDisableActions(true)
+                    o.boardClip.removeFromSuperlayer()
+                    CATransaction.commit()
+                    o.board = nil
+                }
+            }
+        } else if let below, o.orderedBelow != below {
+            // Already showing when a drag started: tuck it under the dragged window once.
+            o.window.order(.below, relativeTo: Int(below))
+            o.orderedBelow = below
+        }
     }
 
     /// Stops every live stream but keeps the stand-ins (with their last frame) in place, e.g.
@@ -545,7 +664,7 @@ final class OverlayManager {
         for o in overlays.values {
             o.mirror?.stop()
             o.mirror = nil
-                o.mirrorIdle = false
+            o.mirrorIdle = false
             o.unchangedFrames = 0
         }
     }
@@ -570,20 +689,21 @@ final class OverlayManager {
         for (id, o) in overlays where o.mirrorIdle && o.shown {
             o.mirrorIdle = false
             o.unchangedFrames = 0
-                if live { startMirror(o, id: id) }
+            if live { startMirror(o, id: id) }
         }
     }
 
     /// The real window is coming back at `frame`: keep the stand-in on top of it, unclipped,
-    /// for a moment so there is no blank frame while the window server catches up.
+    /// for a moment so there is no blank frame while the window server catches up. It stays
+    /// where it is drawn (board or window).
     func handoff(_ id: CGWindowID, to frame: CGRect, delay: TimeInterval = 0.12) {
         guard let o = overlays[id], o.shown else { return }
         o.expectedSize = frame.size
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        place(o, full: frame, top: frame.minY, bottom: frame.maxY)
+        place(o, full: frame, top: frame.minY, bottom: frame.maxY, onBoard: !o.inWindow, below: o.orderedBelow)
         CATransaction.commit()
-        o.window.display()
+        if o.inWindow { o.window.display() }
         guard pendingHide[id] == nil else { return }
         let item = DispatchWorkItem { [weak self] in self?.fadeOut(id) }
         pendingHide[id] = item
@@ -596,18 +716,30 @@ final class OverlayManager {
     func fadeOut(_ id: CGWindowID, duration: TimeInterval = 0.18) {
         pendingHide.removeValue(forKey: id)?.cancel()
         guard let o = overlays[id], o.shown else { return }
-        stopLive(o)
+        stopLive(o, keepImage: true)
         o.fading = true
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = duration
-            o.window.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in
+        let done = { [weak self] in
             guard o.fading else { return }  // shown again meanwhile
             o.fading = false
             o.shown = false
-            o.window.ignoresMouseEvents = true
             self?.release(o)
-        })
+        }
+        if o.inWindow {
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = duration
+                o.window.animator().alphaValue = 0
+            }, completionHandler: done)
+        } else {
+            CATransaction.begin()
+            CATransaction.setCompletionBlock(done)
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 1
+            fade.toValue = 0
+            fade.duration = duration
+            o.boardClip.add(fade, forKey: "fade")
+            o.boardClip.opacity = 0
+            CATransaction.commit()
+        }
     }
 
     /// Image currently shown for this window (latest live frame or the snapshot).
@@ -619,16 +751,10 @@ final class OverlayManager {
         o.fading = false
         o.shown = false
         stopLive(o)
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0
-            o.window.animator().alphaValue = 0
-        }
-        o.window.alphaValue = 0
-        o.window.ignoresMouseEvents = true
         release(o)
     }
 
-    private func stopLive(_ o: Overlay) {
+    private func stopLive(_ o: Overlay, keepImage: Bool = false) {
         o.mirror?.stop()
         o.mirror = nil
         o.reference = nil
@@ -636,16 +762,29 @@ final class OverlayManager {
         o.mirrorIdle = false
         o.unchangedFrames = 0
         o.lastSignature = []
-        o.image = nil
+        if !keepImage { o.image = nil }
     }
 
-    /// A hidden overlay stays ordered in (see `Overlay.shown`) but holds nothing: no picture,
-    /// and a 1x1 window, so its backing store shrinks to nothing too.
+    /// A hidden overlay holds nothing: off its board, and its window (still ordered in, see
+    /// `Overlay.shown`) transparent, click-through and 1x1, so its backing store shrinks too.
     private func release(_ o: Overlay) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        o.imageLayer.contents = nil
+        o.boardClip.removeAllAnimations()
+        o.boardClip.removeFromSuperlayer()
+        o.boardClip.opacity = 1
+        o.setImage(nil)
         CATransaction.commit()
+        o.board = nil
+        if o.inWindow {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0
+                o.window.animator().alphaValue = 0
+            }
+        }
+        o.inWindow = false
+        o.window.alphaValue = 0
+        o.window.ignoresMouseEvents = true
         o.window.setFrame(NSRect(x: o.window.frame.minX, y: o.window.frame.minY, width: 1, height: 1), display: false)
     }
 
@@ -655,7 +794,9 @@ final class OverlayManager {
 
     func remove(_ id: CGWindowID) {
         guard let o = overlays.removeValue(forKey: id) else { return }
+        pendingHide.removeValue(forKey: id)?.cancel()
         stopLive(o)
+        o.boardClip.removeFromSuperlayer()
         o.window.orderOut(nil)
     }
 
