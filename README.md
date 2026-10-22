@@ -10,7 +10,7 @@
 
 # Oz
 
-> **About this repository.** oz-wc-macos is the [Oz window compositor](https://github.com/AyberkA0/oz-wc) wrapped for macOS. It is not a window compositor in the full sense: macOS does not let third-party software replace its window server, so Oz runs as an ordinary app that rearranges other apps' windows through the Accessibility API, with workarounds where the system does not allow what it needs (such as snapshots for windows that slide off the top of the screen). The actual window compositor is [oz-wc](https://github.com/AyberkA0/oz-wc), a Wayland compositor for Linux that draws every window itself.
+> **About this repository.** oz-wm-macos is the [Oz window manager](https://github.com/AyberkA0/oz-wm) wrapped for macOS. It is not a window manager in the full sense: macOS does not let third-party software replace its window server, so Oz runs as an ordinary app that rearranges other apps' windows through the Accessibility API, with workarounds where the system does not allow what it needs (such as snapshots for windows that slide off the top of the screen). The actual window manager is [oz-wm](https://github.com/AyberkA0/oz-wm), a Wayland compositor for Linux that draws every window itself.
 
 **Oz is a scrolling tiling window manager for macOS.** Instead of shrinking every window to fit the screen, it places them one after another on an endless **vertical strip** and treats the screen as a view onto that strip. Every window keeps a usable size; you move along the strip by **swiping up and down with three fingers**, and it settles on a window edge when you let go.
 
@@ -239,8 +239,8 @@ oz.set({ doubleTap: { action: function () { oz.appExpose(); } } });
 Commands can also be sent from the shell (skhd, Raycast, scripts):
 
 ```bash
-build/Oz.app/Contents/MacOS/OzWC msg focusDown
-build/Oz.app/Contents/MacOS/OzWC msg setHeight 0.5
+build/Oz.app/Contents/MacOS/OzWM msg focusDown
+build/Oz.app/Contents/MacOS/OzWM msg setHeight 0.5
 ```
 
 <p align="center"><img src="docs/media/road.svg" alt="" width="100%"></p>
@@ -249,7 +249,7 @@ build/Oz.app/Contents/MacOS/OzWC msg setHeight 0.5
 
 - **Window control.** Windows are moved and resized through the Accessibility API (`AXUIElement`); new, closed and focused windows are tracked with `AXObserver`. Moves are applied off the main thread on one queue per application, keeping only the most recent target per window, so a slow application never stalls scrolling. Layout runs once per display frame (`CADisplayLink`).
 - **Gestures.** Raw trackpad contacts are read from `MultitouchSupport.framework` and turned into swipes and taps by a small recognizer (`Multitouch.swift`, `GestureRecognizer.swift`).
-- **Structure.** One strip per desktop and display. The layout logic (the strip, drop slots, drag scrolling, regions around the scroll area, saved layouts) is in the `OzCore` module and covered by unit tests; `OzWC` connects it to macOS.
+- **Structure.** One strip per desktop and display. The layout logic (the strip, drop slots, drag scrolling, regions around the scroll area, saved layouts) is in the `OzCore` module and covered by unit tests; `OzWM` connects it to macOS.
 - **Windows at the top edge.** macOS does not allow a window above the menu bar. With `topOverflow: "slide"` (the default), a window crossing the top edge is moved off screen and drawn in its place from a capture of its own content, clipped at the edge, so it slides out just as it does at the bottom. The partly visible window remains clickable and brings the real window back. With `livePeek`, the capture is refreshed at `livePeekFPS` (at 1x resolution) so video keeps playing. Captures start only when a window reaches the edge and stop after about two seconds without changes, so the system's recording indicator appears only while something is being captured. `topOverflow: "shrink"` (pinned and resized) and `"hide"` never capture. Windows entirely out of view are moved to the bottom-right corner of the screen.
 - **Smooth scrolling** (`smoothScroll`, on by default). While the strip moves, every window is drawn from a snapshot and the real windows are moved once when the motion ends, so scrolling stays smooth regardless of how quickly applications respond. Window contents are static during the motion. Oz keeps recent snapshots of visible windows so the next swipe can use them from its first frame. When disabled, only windows of slow applications are drawn this way.
 - **Slow applications.** Some applications take 50–120 ms to apply a move. Oz tracks each application's recent worst move time; windows of applications above `slowAppThreshold` (30 ms) are drawn from a capture while the strip moves (`slowAppProxy`).
@@ -263,6 +263,6 @@ build/Oz.app/Contents/MacOS/OzWC msg setHeight 0.5
 - Applications with a minimum window size (some settings windows) make their row at least that tall.
 - Windows in native full-screen mode are not tiled.
 - Mission Control opened without Oz (four-finger swipe or the Mission Control key) shows off-screen windows at a small size.
-- The log is at `~/Library/Logs/OzWC.log` (`debug: true` for verbose output). Main-thread delays are logged as `[stall]` with the code responsible, and slow applications as `[slow]`.
+- The log is at `~/Library/Logs/OzWM.log` (`debug: true` for verbose output). Main-thread delays are logged as `[stall]` with the code responsible, and slow applications as `[slow]`.
 
 <p align="center"><sub>Usage animations are placeholders. To add one, place a <code>.gif</code> with the same name next to the corresponding file in <code>docs/media/</code> and update the image path above.</sub></p>

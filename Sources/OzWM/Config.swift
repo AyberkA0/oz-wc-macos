@@ -11,7 +11,7 @@ final class ConfigEngine {
     private var lastModified: Date?
     private(set) var lastError: String?
     private(set) var settings = Settings()
-    /// Validate only: parse hotkeys without registering them (`OzWC --check-config`).
+    /// Validate only: parse hotkeys without registering them (`OzWM --check-config`).
     var dryRun = false
     private(set) var boundCombos: [String] = []
 

@@ -45,7 +45,7 @@ enum Watchdog {
     /// at the lock screen), not a hitch. These made up most "stalls" in the log.
     private static func isIdle(_ stack: [String]) -> Bool {
         guard let top = stack.first, top.contains("mach_msg") else { return false }
-        return !stack.contains { $0.hasPrefix("OzWC") && !$0.hasSuffix(" main") }
+        return !stack.contains { $0.hasPrefix("OzWM") && !$0.hasSuffix(" main") }
     }
 
     /// Our own frames (plus the system call they are waiting in) from the main thread.
@@ -89,7 +89,7 @@ enum Watchdog {
             if out.last != line { out.append(line) }
         }
         // Keep it short: the innermost few frames and everything from our own binary.
-        return Array(out.prefix(4)) + out.dropFirst(4).filter { $0.hasPrefix("OzWC") }.prefix(12)
+        return Array(out.prefix(4)) + out.dropFirst(4).filter { $0.hasPrefix("OzWM") }.prefix(12)
     }
 
     @_silgen_name("swift_demangle")

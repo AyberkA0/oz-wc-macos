@@ -7,9 +7,9 @@
     <key>CFBundleDisplayName</key>
     <string>Oz Window Manager</string>
     <key>CFBundleIdentifier</key>
-    <string>dev.oz.wc</string>
+    <string>dev.oz.wm</string>
     <key>CFBundleExecutable</key>
-    <string>OzWC</string>
+    <string>OzWM</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

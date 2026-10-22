@@ -2,16 +2,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "OzWC",
+    name: "OzWM",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "OzWC", targets: ["OzWC"]),
+        .executable(name: "OzWM", targets: ["OzWM"]),
     ],
     targets: [
         // Pure logic (layout, gestures, settings). No AppKit, unit-tested.
         .target(name: "OzCore"),
         .executableTarget(
-            name: "OzWC",
+            name: "OzWM",
             dependencies: ["OzCore"],
             linkerSettings: [
                 .linkedFramework("Cocoa"),

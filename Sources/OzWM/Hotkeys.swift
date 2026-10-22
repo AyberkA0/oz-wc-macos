@@ -40,7 +40,7 @@ final class HotkeyCenter {
 
     private func grab(_ id: UInt32, code: UInt32, mods: UInt32) -> EventHotKeyRef? {
         var ref: EventHotKeyRef?
-        let hkID = EventHotKeyID(signature: OSType(0x4F5A_5743), id: id) // 'OZWC'
+        let hkID = EventHotKeyID(signature: OSType(0x4F5A_574D), id: id) // 'OZWM'
         let status = RegisterEventHotKey(code, mods, hkID, GetApplicationEventTarget(), 0, &ref)
         return status == noErr ? ref : nil
     }

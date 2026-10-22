@@ -11,7 +11,7 @@ run: app stop
 	open build/Oz.app
 
 stop:
-	-pkill -x OzWC
+	-pkill -x OzWM
 
 # Copy to ~/Applications (open it from there to grant Accessibility once)
 install: app stop
@@ -24,7 +24,7 @@ test:
 	swift test
 
 check-config: build
-	.build/debug/OzWC --check-config
+	.build/debug/OzWM --check-config
 
 clean:
 	rm -rf .build build

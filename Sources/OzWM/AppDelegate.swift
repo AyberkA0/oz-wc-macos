@@ -2,7 +2,7 @@ import ApplicationServices
 import Cocoa
 import OzCore
 
-let commandNotification = Notification.Name("dev.oz.wc.command")
+let commandNotification = Notification.Name("dev.oz.wm.command")
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let wm = WindowManager()
@@ -245,7 +245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item("Open Accessibility Settings", #selector(openAccessibilitySettings))
         } else {
             let count = wm.allWindowsInfo().count
-            item("Oz WC — \(count) window\(count == 1 ? "" : "s")", nil).isEnabled = false
+            item("Oz WM — \(count) window\(count == 1 ? "" : "s")", nil).isEnabled = false
             if let err = config.lastError {
                 item("⚠︎ Config error: \(err)", nil).isEnabled = false
             }

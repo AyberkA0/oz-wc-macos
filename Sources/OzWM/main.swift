@@ -5,9 +5,9 @@ let version = "0.1.0"
 let args = Array(CommandLine.arguments.dropFirst())
 switch args.first {
 case "msg":
-    // OzWC msg <command> [arg]  — drive a running Oz from the shell (skhd, scripts, ...).
+    // OzWM msg <command> [arg]  — drive a running Oz from the shell (skhd, scripts, ...).
     guard args.count >= 2 else {
-        FileHandle.standardError.write("usage: OzWC msg <command> [arg]\n".data(using: .utf8)!)
+        FileHandle.standardError.write("usage: OzWM msg <command> [arg]\n".data(using: .utf8)!)
         exit(1)
     }
     DistributedNotificationCenter.default().postNotificationName(
@@ -35,7 +35,7 @@ case "--check-config":
     print("OK")
     exit(0)
 case "--version":
-    print("Oz WC \(version)")
+    print("Oz WM \(version)")
     exit(0)
 default:
     break
