@@ -1716,7 +1716,28 @@ final class WindowManager {
         manualFloat.insert(w.id)
         Log.debug("docked \(w.id) \(w.appName) in region \(i) (\(list.count) there)")
         layoutDocks(key)
+        checkDocked(w, key: key)
         return true
+    }
+
+    /// A moment after docking, the window may not be where Oz put it: macOS's own tiling
+    /// (a window let go near a screen edge goes to that half) lands after Oz's move and
+    /// left it over the strip. Read where it is and put it back if need be.
+    private func checkDocked(_ w: ManagedWindow, key: StripKey) {
+        let id = w.id, element = w.element
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self, self.floating[id] != nil else { return }
+            self.writer.perform(pid: w.pid) {
+                let actual = AX.frame(element)
+                DispatchQueue.main.async {
+                    guard let actual, let w = self.floating[id], let placed = w.lastFrame,
+                          !actual.approxEqual(placed, tolerance: 2) else { return }
+                    Log.debug("docked \(id) moved to \(actual) by something else; back to \(placed)")
+                    w.lastFrame = actual
+                    self.layoutDocks(key)
+                }
+            }
+        }
     }
 
     /// Where a window let go at `point` would be docked: the region under it, the windows
