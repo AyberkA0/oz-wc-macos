@@ -15,8 +15,6 @@ enum WindowCapture {
     private static let fullWindow: UInt32 = 1 << 15
     /// One pixel per point instead of the Retina backing (a quarter of the pixels).
     private static let nominalResolution: UInt32 = 1 << 9
-    /// With the window's shadow around it, as the window server draws it (found by trying).
-    private static let withShadowOption: UInt32 = 1 << 0
 
     /// A window-server connection of our own for capturing. A capture holds its connection's
     /// lock for its whole duration; on the main connection that blocked the main thread's
@@ -34,56 +32,19 @@ enum WindowCapture {
     /// The window at `scale` of its own resolution (1: every pixel it has, lossless; the
     /// `captureScale` setting), and the size in points it shows. `expected`: the size the
     /// window should have, to tell its backing scale when screens differ. ~16 ms at full
-    /// resolution; call it off the main thread. `withShadow`: also the window's real shadow,
-    /// as a picture of the window with its shadow around it and where the window sits in it.
-    static func image(_ id: CGWindowID, scale: CGFloat, expected: CGSize = .zero,
-                      withShadow: Bool = false) -> (image: CGImage, points: CGSize, shadow: WindowShadow?)? {
+    /// resolution; call it off the main thread.
+    static func image(_ id: CGWindowID, scale: CGFloat, expected: CGSize = .zero) -> (image: CGImage, points: CGSize)? {
         let s = min(max(scale, 0.1), 1)
         let backing = NSScreen.screens.map(\.backingScaleFactor).max() ?? 2
         // When one pixel per point is enough, the window server captures that small itself
         // (a quarter of the work on Retina); otherwise at full resolution, scaled down after.
         let nominal = backing * s <= 1.001
         var wid = id
-        let options = ignoreClipShape | fullWindow | (nominal ? nominalResolution : 0) | (withShadow ? withShadowOption : 0)
-        guard var raw = (CGSHWCaptureWindowList(connection, &wid, 1, options) as? [CGImage])?.first else { return nil }
-        var shadow: WindowShadow?
-        if withShadow {
-            // The window alone is cut out of it (no copy), so everything else sees the usual picture.
-            guard let r = windowRect(in: raw), let window = raw.cropping(to: r) else { return nil }
-            let ppp = nominal ? 1 : CGFloat(window.width) / pointSize(of: window, near: expected).width
-            let insets = NSEdgeInsets(top: r.minY / ppp, left: r.minX / ppp,
-                                      bottom: (CGFloat(raw.height) - r.maxY) / ppp, right: (CGFloat(raw.width) - r.maxX) / ppp)
-            if insets.left > 2, insets.left < 80, abs(insets.left - insets.right) < 3, insets.top >= 0, insets.top < 80,
-               insets.bottom > 2, insets.bottom < 100 {
-                shadow = WindowShadow(image: raw, insets: insets)
-            }
-            raw = window
-        }
+        let options = ignoreClipShape | fullWindow | (nominal ? nominalResolution : 0)
+        guard let raw = (CGSHWCaptureWindowList(connection, &wid, 1, options) as? [CGImage])?.first else { return nil }
         let points = nominal ? CGSize(width: raw.width, height: raw.height) : pointSize(of: raw, near: expected)
         let factor = nominal ? backing * s : s
-        return (factor >= 0.999 ? raw : downscaled(raw, by: factor) ?? raw, points, shadow)
-    }
-
-    /// Where the window lies in a capture with its shadow (pixels, top-left origin): the
-    /// shadow is at most about 40% opaque, the window's edge (outside its rounded corners)
-    /// fully, so scanning the middle row and column from outside in finds it. 95%: the
-    /// anti-aliased pixel just outside the edge (~85%) isn't the window's.
-    private static func windowRect(in image: CGImage) -> CGRect? {
-        guard let data = image.dataProvider?.data, let bytes = CFDataGetBytePtr(data),
-              image.bitsPerPixel == 32 else { return nil }
-        let info = image.bitmapInfo, alphaInfo = image.alphaInfo
-        let little = info.contains(.byteOrder32Little)
-        let first = alphaInfo == .premultipliedFirst || alphaInfo == .first || alphaInfo == .noneSkipFirst
-        let alphaIndex = little ? (first ? 3 : 0) : (first ? 0 : 3)
-        let w = image.width, h = image.height, row = image.bytesPerRow
-        func opaque(_ x: Int, _ y: Int) -> Bool { bytes[y * row + x * 4 + alphaIndex] >= 242 }
-        let my = h / 2, mx = w / 2
-        guard let left = (0..<w).first(where: { opaque($0, my) }),
-              let right = (0..<w).reversed().first(where: { opaque($0, my) }),
-              let top = (0..<h).first(where: { opaque(mx, $0) }),
-              let bottom = (0..<h).reversed().first(where: { opaque(mx, $0) }),
-              right > left, bottom > top else { return nil }
-        return CGRect(x: left, y: top, width: right - left + 1, height: bottom - top + 1)
+        return (factor >= 0.999 ? raw : downscaled(raw, by: factor) ?? raw, points)
     }
 
     /// The window size (points) a full-resolution capture shows: its pixels over the backing
@@ -113,13 +74,6 @@ enum WindowCapture {
     }
 }
 
-/// A window's real shadow: a capture of the window with its shadow, and how far the shadow
-/// reaches past each of the window's edges (points).
-struct WindowShadow {
-    let image: CGImage
-    let insets: NSEdgeInsets
-}
-
 /// macOS refuses to put a window above the menu bar, so a row can't really
 /// scroll off the top edge. While the strip is moving we instead hide the real
 /// window and draw a snapshot of it in our own borderless window, clipped at
@@ -133,7 +87,6 @@ final class SnapshotCache {
     private struct Entry {
         let image: CGImage
         let size: CGSize
-        let shadow: WindowShadow?
         let time: CFTimeInterval
         /// Taken while the window was on screen. A parked (off-screen) window loses the
         /// wallpaper tint macOS gives window backgrounds, so its capture looks greyer.
@@ -164,12 +117,6 @@ final class SnapshotCache {
         guard let e = entries[id], abs(e.size.width - size.width) <= 3,
               e.size.height >= size.height - 3 else { return nil }
         return e.image
-    }
-
-    /// The window's real shadow from its latest snapshot, if that has the same size.
-    func shadow(_ id: CGWindowID, size: CGSize) -> WindowShadow? {
-        guard let e = entries[id], abs(e.size.width - size.width) <= 3, abs(e.size.height - size.height) <= 3 else { return nil }
-        return e.shadow
     }
 
     /// Latest snapshot whatever size it was taken at.
@@ -204,12 +151,12 @@ final class SnapshotCache {
         inFlight.insert(id)
         let scale = self.scale
         queue.async { [weak self] in
-            var shot = WindowCapture.image(id, scale: scale, expected: size, withShadow: true)
+            var shot = WindowCapture.image(id, scale: scale, expected: size)
             if let s = shot, SnapshotCache.isBlank(s.image) { shot = nil }
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.inFlight.remove(id)
-                guard let (image, actual, shadow) = shot else {
+                guard let (image, actual) = shot else {
                     // Don't retry every frame (each attempt lights the recording indicator).
                     self.failedAt[id] = CACurrentMediaTime()
                     Log.debug("snapshot \(id) unusable")
@@ -221,7 +168,7 @@ final class SnapshotCache {
                 if abs(actual.width - size.width) > 4 || abs(actual.height - size.height) > 4 {
                     Log.debug("snapshot \(id) is \(Int(actual.width))x\(Int(actual.height)), not \(Int(size.width))x\(Int(size.height))")
                 }
-                self.entries[id] = Entry(image: image, size: actual, shadow: shadow, time: CACurrentMediaTime(), onScreen: onScreen)
+                self.entries[id] = Entry(image: image, size: actual, time: CACurrentMediaTime(), onScreen: onScreen)
                 self.onReady?(id)
             }
         }
@@ -387,16 +334,16 @@ enum ColorShift {
     }
 }
 
-/// Click target for a peeking window: clicking the visible strip brings the real window back.
-/// A click, not a press: acting on mouse down started scrolling while the button was still
-/// held, and a press that turns into a drag isn't a click.
 /// A stand-in's window: always exactly where it is put. AppKit otherwise pushes a window
-/// that reaches into the menu bar down below it, and a stand-in with room for its shadow
-/// above does: the picture jumped ~30 pt down, then slid back as it faded (a flicker).
+/// that reaches into the menu bar down below it: the picture jumped down, then slid back as
+/// it faded (a flicker).
 private final class StandInPanel: NSPanel {
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 
+/// Click target for a peeking window: clicking the visible strip brings the real window back.
+/// A click, not a press: acting on mouse down started scrolling while the button was still
+/// held, and a press that turns into a drag isn't a click.
 private final class PeekView: NSView {
     var onClick: (() -> Void)?
     private var downAt: NSPoint?
@@ -433,22 +380,8 @@ final class OverlayManager {
         /// Row size the stand-in represents (the window may be taller if the app refused).
         var expectedSize = CGSize.zero
         /// Where the whole window lies in the overlay window (its own coordinates, y up): the
-        /// part outside the overlay's bounds is cut off, the margin around it holds the shadow.
+        /// part outside the overlay's bounds is cut off.
         var contentFrame = CGRect.zero
-        /// The window's real shadow while moving (see `show`): its capture with the shadow,
-        /// laid under the picture.
-        let shadowLayer = CALayer()
-        /// Stand-in for it until a capture with the shadow exists: a wide soft shadow and a
-        /// thin one along the edge, as close to the system's as measured.
-        let keyShadow = CALayer()
-        let edgeShadow = CALayer()
-        /// The shadow it draws while moving, if any, and where (AX coordinates) the window is.
-        var ownShadow: ShadowKind?
-        var fullRect = CGRect.zero
-        /// The real window is on screen right under it: then its own shadow shows, and ours
-        /// stays off, or the two would add up (a darker flash). Followed every frame from the
-        /// window server (`syncShadows`), not guessed from when we asked the app to move it.
-        var realCovers = false
         /// Drawn and clickable. A hidden overlay stays ordered in, transparent and click-through:
         /// taking a window off screen (`orderOut`) and back is a window-server round trip that
         /// stalled the main thread for up to half a second, many times per swipe.
@@ -456,8 +389,6 @@ final class OverlayManager {
         /// The window it was last ordered just below (a window being dragged), if any.
         var orderedBelow: CGWindowID?
         var fading = false
-        /// The content changed since the window shadow was last worked out.
-        var shadowStale = true
         /// Snapshot with true on-screen colours, to calibrate the live stream against.
         var reference: CGImage?
 
@@ -479,20 +410,6 @@ final class OverlayManager {
             view.layer?.masksToBounds = true
             imageLayer.contentsGravity = .resize
             imageLayer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
-            shadowLayer.contentsGravity = .resize
-            shadowLayer.isHidden = true
-            shadowLayer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "hidden": NSNull()]
-            view.layer?.addSublayer(shadowLayer)
-            for (layer, opacity, radius, offset) in [(keyShadow, Float(0.45), CGFloat(11), CGFloat(-7.5)),
-                                                     (edgeShadow, Float(0.35), CGFloat(0.75), CGFloat(0))] {
-                layer.shadowColor = NSColor.black.cgColor
-                layer.shadowOpacity = opacity
-                layer.shadowRadius = radius
-                layer.shadowOffset = CGSize(width: 0, height: offset)
-                layer.isHidden = true
-                layer.actions = ["bounds": NSNull(), "position": NSNull(), "shadowPath": NSNull(), "hidden": NSNull()]
-                view.layer?.addSublayer(layer)
-            }
             view.layer?.addSublayer(imageLayer)
             window.contentView = view
         }
@@ -505,18 +422,10 @@ final class OverlayManager {
     /// and below `clipBottom`. Also used as a stand-in for a whole window (a slow app's window
     /// while scrolling): then `full` lies between the two and nothing is cut off.
     /// `stream`: keep it live (if live peeks are on); stand-ins during a scroll don't.
-    /// `shadow`: drawn with a window shadow like the real one. `clickable`: a peek at rest,
-    /// drawn without a margin so it doesn't take clicks meant for the windows around it.
-    /// Otherwise (anything moving) the shadow is drawn in a margin around
-    /// the picture, so it moves with it in the same frame and never has to be worked out
-    /// again (the system's shadow is, on every size change, a frame or more late: flicker):
-    /// `windowShadow`, the window's own as captured, so it is the very same as the real
-    /// window's on either side of the switch.
     /// `below`: a window being dragged, which must stay on top of the stand-ins.
     func show(_ id: CGWindowID, image: CGImage, full: CGRect, clipTop: CGFloat,
               clipBottom: CGFloat = .greatestFiniteMagnitude, trueColor: Bool = false,
-              stream: Bool = true, shadow: Bool = false, clickable: Bool = true, windowShadow: WindowShadow? = nil,
-              below: CGWindowID? = nil) {
+              stream: Bool = true, below: CGWindowID? = nil) {
         if let o = overlays[id], o.fading {
             // Shown again while fading out: replace the running fade, or it would carry on to
             // zero and leave the stand-in invisible over a parked window (the window "vanished").
@@ -541,7 +450,6 @@ final class OverlayManager {
             overlays[id] = o
         }
         o.expectedSize = full.size
-        if !o.shown { o.realCovers = OverlayManager.realWindowsCovering([id: full])[id] ?? false }
         if trueColor && o.reference == nil { o.reference = image }
         if live && stream && o.mirror == nil && !o.mirrorIdle { startMirror(o, id: id) }
 
@@ -550,26 +458,11 @@ final class OverlayManager {
         if !o.isLive && o.image !== image {
             o.image = image
             o.imageLayer.contents = image
-            o.shadowStale = true
         }
         o.imageLayer.contentsScale = o.window.backingScaleFactor
-        let ownShadow = shadow && !clickable
-        let resized = place(o, full: full, top: top, bottom: bottom, clipTop: clipTop, clipBottom: clipBottom,
-                            shadow: ownShadow ? (windowShadow.map { .captured($0) } ?? .drawn) : nil)
+        place(o, full: full, top: top, bottom: bottom)
         CATransaction.commit()
 
-        // At rest the system draws the shadow: its size doesn't change there, so it is
-        // worked out once (again when the picture or size changes: worked out while the
-        // stand-in was still empty, it would stay missing).
-        let systemShadow = shadow && clickable
-        if o.window.hasShadow != systemShadow {
-            o.window.hasShadow = systemShadow
-            o.shadowStale = true
-        }
-        if systemShadow && (resized || o.shadowStale) {
-            o.shadowStale = false
-            o.window.invalidateShadow()
-        }
         if !o.shown {
             o.shown = true
             o.window.alphaValue = 1
@@ -636,129 +529,14 @@ final class OverlayManager {
         o.imageLayer.frame = CGRect(x: row.minX, y: row.maxY - h, width: w, height: h)
     }
 
-    /// How far the system's shadow reaches past a window's edges (measured), for the drawn one.
-    private static let drawnShadowInsets = NSEdgeInsets(top: 16, left: 23, bottom: 31, right: 23)
-    /// Corner radius of macOS windows (measured), for the shape of the drawn shadow.
-    private static let cornerRadius: CGFloat = 18
-
-    fileprivate enum ShadowKind {
-        case captured(WindowShadow)
-        case drawn
-    }
-
     /// Puts the overlay window over the visible part (`top`...`bottom`) of a window at `full`
-    /// (AX coordinates), with room around it for `shadow` on the sides that aren't cut off,
-    /// within the clip; lays the picture and shadow out inside. In a Core Animation
-    /// transaction. True if the overlay window changed size.
-    @discardableResult
-    private func place(_ o: Overlay, full: CGRect, top: CGFloat, bottom: CGFloat,
-                       clipTop: CGFloat = -.greatestFiniteMagnitude, clipBottom: CGFloat = .greatestFiniteMagnitude,
-                       shadow: ShadowKind?) -> Bool {
-        let m: NSEdgeInsets
-        switch shadow {
-        case .captured(let s): m = s.insets
-        case .drawn: m = Self.drawnShadowInsets
-        case nil: m = NSEdgeInsetsZero
-        }
-        let winTop = top > full.minY + 0.5 ? top : max(full.minY - m.top, clipTop)
-        let winBottom = bottom < full.maxY - 0.5 ? bottom : min(full.maxY + m.bottom, clipBottom)
-        let frame = NSRect(x: full.minX - m.left, y: Geometry.primaryHeight - winBottom,
-                           width: full.width + m.left + m.right, height: winBottom - winTop)
-        let content = CGRect(x: m.left, y: winBottom - full.maxY, width: full.width, height: full.height)
-        if case .captured(let s) = shadow {
-            if (o.shadowLayer.contents as AnyObject?) !== s.image { o.shadowLayer.contents = s.image }
-            o.shadowLayer.frame = CGRect(x: 0, y: content.minY - m.bottom, width: frame.width,
-                                         height: full.height + m.top + m.bottom)
-        }
-        if case .drawn = shadow, content.size != o.contentFrame.size {
-            let path = CGPath(roundedRect: CGRect(origin: .zero, size: content.size),
-                              cornerWidth: Self.cornerRadius, cornerHeight: Self.cornerRadius, transform: nil)
-            o.keyShadow.shadowPath = path
-            o.edgeShadow.shadowPath = path
-        }
-        o.ownShadow = shadow
-        o.fullRect = full
-        Self.showShadow(o)
-        o.contentFrame = content
-        o.keyShadow.frame = content
-        o.edgeShadow.frame = content
+    /// (AX coordinates) and lays the picture out inside. In a Core Animation transaction.
+    private func place(_ o: Overlay, full: CGRect, top: CGFloat, bottom: CGFloat) {
+        o.contentFrame = CGRect(x: 0, y: bottom - full.maxY, width: full.width, height: full.height)
         OverlayManager.layoutImage(o)
         // Layer-backed content: no need to force a synchronous redraw every frame.
-        let resized = o.window.frame.size != frame.size
-        o.window.setFrame(frame, display: false)
-        return resized
-    }
-
-    /// Our shadow layers on or off: the kind asked for, unless the real window is right under.
-    private static func showShadow(_ o: Overlay) {
-        var captured = false, drawn = false
-        if !o.realCovers {
-            switch o.ownShadow {
-            case .captured: captured = true
-            case .drawn: drawn = true
-            case nil: break
-            }
-        }
-        o.shadowLayer.isHidden = !captured
-        o.keyShadow.isHidden = !drawn
-        o.edgeShadow.isHidden = !drawn
-    }
-
-    /// Whether each real window is on screen covering most of the given frame (AX coordinates),
-    /// as the window server has it now. One query for all of them.
-    private static func realWindowsCovering(_ frames: [CGWindowID: CGRect]) -> [CGWindowID: Bool] {
-        guard !frames.isEmpty else { return [:] }
-        let ids = Array(frames.keys)
-        let values = UnsafeMutablePointer<UnsafeRawPointer?>.allocate(capacity: ids.count)
-        defer { values.deallocate() }
-        for (i, id) in ids.enumerated() { values[i] = UnsafeRawPointer(bitPattern: UInt(id)) }
-        guard let array = CFArrayCreate(nil, values, ids.count, nil),
-              let list = CGWindowListCreateDescriptionFromArray(array) as? [[String: Any]] else { return [:] }
-        var out: [CGWindowID: Bool] = [:]
-        for info in list {
-            guard let id = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value, let full = frames[id],
-                  let b = info[kCGWindowBounds as String] else { continue }
-            var r = CGRect.zero
-            CGRectMakeWithDictionaryRepresentation(b as! CFDictionary, &r)
-            let onScreen = (info[kCGWindowIsOnscreen as String] as? Bool) ?? false
-            let overlap = r.intersection(full)
-            out[id] = onScreen && !overlap.isNull && overlap.width * overlap.height >= full.width * full.height * 0.5
-        }
-        return out
-    }
-
-    /// Each frame something moves (and while handing over): our shadows follow whether the
-    /// real windows are under their stand-ins right now.
-    func syncShadows() {
-        var frames: [CGWindowID: CGRect] = [:]
-        for (id, o) in overlays where o.shown && o.ownShadow != nil { frames[id] = o.fullRect }
-        let covering = Self.realWindowsCovering(frames)
-        var changed: [Overlay] = []
-        for (id, covers) in covering {
-            guard let o = overlays[id], o.realCovers != covers else { continue }
-            o.realCovers = covers
-            changed.append(o)
-        }
-        guard !changed.isEmpty else { return }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        changed.forEach(Self.showShadow)
-        CATransaction.commit()
-    }
-
-    /// Keeps `syncShadows` going after the motion stopped (the display link pauses then),
-    /// until every handover is through.
-    private var handoffTimer: Timer?
-    private func followHandoffs() {
-        guard handoffTimer == nil else { return }
-        handoffTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 120, repeats: true) { [weak self] t in
-            guard let self else { return t.invalidate() }
-            self.syncShadows()
-            if self.pendingHide.isEmpty && !self.overlays.values.contains(where: { $0.fading }) {
-                t.invalidate()
-                self.handoffTimer = nil
-            }
-        }
+        o.window.setFrame(NSRect(x: full.minX, y: Geometry.primaryHeight - bottom, width: full.width, height: bottom - top),
+                          display: false)
     }
 
     /// Stops every live stream but keeps the stand-ins (with their last frame) in place, e.g.
@@ -803,12 +581,9 @@ final class OverlayManager {
         o.expectedSize = frame.size
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        // Our shadow stays until the real window is really back underneath with its own
-        // (`syncShadows` sees it), not one frame less (no shadow) or more (two).
-        place(o, full: frame, top: frame.minY, bottom: frame.maxY, shadow: o.ownShadow)
+        place(o, full: frame, top: frame.minY, bottom: frame.maxY)
         CATransaction.commit()
         o.window.display()
-        followHandoffs()
         guard pendingHide[id] == nil else { return }
         let item = DispatchWorkItem { [weak self] in self?.fadeOut(id) }
         pendingHide[id] = item
