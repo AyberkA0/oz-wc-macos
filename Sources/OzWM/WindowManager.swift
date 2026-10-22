@@ -122,8 +122,10 @@ final class WindowManager {
     private struct GestureState {
         let key: StripKey; let strip: Strip; let screen: NSScreen; let startScroll: CGFloat
         /// How far the finger may move the strip: magnetic scrolling stops it at the next
-        /// window either way (it can't land further), otherwise the strip's ends.
+        /// window either way, otherwise the strip's ends.
         var range: ClosedRange<CGFloat>
+        /// How far the fingers have gone on the trackpad (trackpad heights, the way they went).
+        var padTravel = 0.0
     }
     private var gesture: GestureState?
 
@@ -2014,6 +2016,7 @@ final class WindowManager {
 
         case .swipeChanged(let dy):
             guard let g = gesture else { return }
+            gesture?.padTravel += dy
             let vh = viewport(g.screen).height
             let delta = CGFloat(dy * settings.swipe.sensitivity) * vh * (settings.swipe.natural ? 1 : -1)
             // Hard stops: the strip's ends, or the next window for magnetic scrolling.
@@ -2032,7 +2035,10 @@ final class WindowManager {
             let target: CGFloat
             switch settings.swipe.snap {
             case .always:
-                target = g.strip.snapTarget(from: s, velocity: velocity, start: g.startScroll, viewportHeight: vh, gap: settings.gap)
+                // A very strong swipe (most of the trackpad's height, fast) moves three windows.
+                let strong = abs(g.padTravel) >= Self.strongSwipeTravel && abs(v) >= Self.strongSwipeSpeed
+                target = g.strip.snapTarget(from: s, velocity: velocity, start: g.startScroll, viewportHeight: vh,
+                                            gap: settings.gap, steps: strong ? 3 : 1)
             case .near, .off:
                 target = g.strip.restingScroll(from: s, velocity: velocity, viewportHeight: vh, gap: settings.gap,
                                                snapDistance: settings.swipe.snap == .near ? settings.swipe.snapDistance : 0,
@@ -2075,7 +2081,7 @@ final class WindowManager {
                     activateAfterScroll(id, key: g.key)
                 }
             }
-            Log.debug("swipe ended v=\(Int(velocity)) -> \(Int(target))")
+            Log.debug(String(format: "swipe ended v=%d (%.2f pads/s, %.2f pads) -> %d", Int(velocity), v, g.padTravel, Int(target)))
             emit?("swipeEnded", ["scroll": target])
 
         case .tap, .doubleTap:
@@ -2157,6 +2163,11 @@ final class WindowManager {
             settle(strip, screen: screen)
         }
     }
+
+    /// A magnetic swipe this strong moves three windows instead of one: the fingers went this
+    /// much of the trackpad's height and let go at this many trackpad heights per second.
+    private static let strongSwipeTravel = 0.7
+    private static let strongSwipeSpeed = 3.0
 
     private func animate(_ key: StripKey, duration: Double, spring: Animation.Spring? = nil) {
         guard let strip = strips[key] else { return }

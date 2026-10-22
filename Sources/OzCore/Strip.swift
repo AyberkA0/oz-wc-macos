@@ -461,47 +461,58 @@ public final class Strip {
     }
 
     /// Where a swipe released at `s` with `velocity` (points/s, positive = scrolling down)
-    /// lands when every swipe moves one window: only the swipe's direction counts, never
-    /// how far or how fast it went. `start`: where the swipe began.
+    /// lands when every swipe moves one window: only the swipe's direction counts, not how
+    /// far or how fast it went (except `steps`). `start`: where the swipe began.
     ///
     /// Down: the next window not yet fully shown below comes in, its bottom on the bottom
     /// edge. Up: the next one above, its top on the top edge. If that window was already
     /// mostly in view (over `mostlyShown` of its height) when the swipe began, it goes on to
     /// the window's far edge instead: down, its top on the top edge; up, its bottom on the
-    /// bottom edge. A window taller than the screen moves it by at most a screen. A nudge (under `nudge` points, released slowly)
-    /// goes back to where the swipe started; at an end of the strip it stays there.
+    /// bottom edge. A window taller than the screen moves it by at most a screen. `steps`:
+    /// how many windows it moves on, one after the other (a very strong swipe). A nudge
+    /// (under `nudge` points, released slowly) goes back to where the swipe started; at an
+    /// end of the strip it stays there.
     public func snapTarget(from s: CGFloat, velocity: CGFloat, start: CGFloat? = nil, viewportHeight vh: CGFloat,
-                           gap: CGFloat, nudge: CGFloat = 30, mostlyShown: CGFloat = 0.65) -> CGFloat {
+                           gap: CGFloat, nudge: CGFloat = 30, mostlyShown: CGFloat = 0.65, steps: Int = 1) -> CGFloat {
         let from = clampScroll(start ?? s, viewportHeight: vh, gap: gap)
         let moved = s - from
         // Fingers slow down before they lift: a slow release goes the way the swipe went.
         let dir: CGFloat = abs(velocity) >= vh * 0.1 ? (velocity > 0 ? 1 : -1) : (abs(moved) >= nudge ? (moved > 0 ? 1 : -1) : 0)
-        func shown(_ top: CGFloat, _ bottom: CGFloat) -> CGFloat {
-            max(0, min(bottom, from + vh) - max(top, from)) / max(bottom - top, 1)
+        func step(_ from: CGFloat) -> CGFloat {
+            var target = from
+            func shown(_ top: CGFloat, _ bottom: CGFloat) -> CGFloat {
+                max(0, min(bottom, from + vh) - max(top, from)) / max(bottom - top, 1)
+            }
+            if dir > 0 {
+                for i in rows.indices {
+                    let top = rowTop(i, gap: gap), bottom = top + rows[i].height
+                    guard bottom > from + vh + 1 else { continue }
+                    if rows[i].height > vh + 1 {
+                        target = min(bottom - vh, from + vh)
+                    } else {
+                        target = shown(top, bottom) > mostlyShown && top > from + 1 ? top : bottom - vh
+                    }
+                    break
+                }
+            } else if dir < 0 {
+                for i in rows.indices.reversed() {
+                    let top = rowTop(i, gap: gap), bottom = top + rows[i].height
+                    guard top < from - 1 else { continue }
+                    if rows[i].height > vh + 1 {
+                        target = max(top, from - vh)
+                    } else {
+                        target = shown(top, bottom) > mostlyShown && bottom - vh < from - 1 ? bottom - vh : top
+                    }
+                    break
+                }
+            }
+            return clampScroll(target, viewportHeight: vh, gap: gap)
         }
         var target = from
-        if dir > 0 {
-            for i in rows.indices {
-                let top = rowTop(i, gap: gap), bottom = top + rows[i].height
-                guard bottom > from + vh + 1 else { continue }
-                if rows[i].height > vh + 1 {
-                    target = min(bottom - vh, from + vh)
-                } else {
-                    target = shown(top, bottom) > mostlyShown && top > from + 1 ? top : bottom - vh
-                }
-                break
-            }
-        } else if dir < 0 {
-            for i in rows.indices.reversed() {
-                let top = rowTop(i, gap: gap), bottom = top + rows[i].height
-                guard top < from - 1 else { continue }
-                if rows[i].height > vh + 1 {
-                    target = max(top, from - vh)
-                } else {
-                    target = shown(top, bottom) > mostlyShown && bottom - vh < from - 1 ? bottom - vh : top
-                }
-                break
-            }
+        for _ in 0..<max(1, steps) {
+            let next = step(target)
+            if abs(next - target) < 1 { break }
+            target = next
         }
         return clampScroll(target, viewportHeight: vh, gap: gap)
     }

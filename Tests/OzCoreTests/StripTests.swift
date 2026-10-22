@@ -253,6 +253,18 @@ final class StripTests: XCTestCase {
         XCTAssertEqual(u.snapTarget(from: 1050, velocity: 0, start: 1100, viewportHeight: vh, gap: 10), 510)
     }
 
+    func testStrongMagneticSwipeMovesThreeWindows() {
+        // Six rows of 495: tops 0, 505, 1010, 1515, 2020, 2525; max 2020.
+        let s = makeStrip([495, 495, 495, 495, 495, 495])
+        // Down from 0, one window at a time: 505, 1010, 1515.
+        XCTAssertEqual(s.snapTarget(from: 400, velocity: 5000, start: 0, viewportHeight: vh, gap: 10), 505)
+        XCTAssertEqual(s.snapTarget(from: 400, velocity: 5000, start: 0, viewportHeight: vh, gap: 10, steps: 3), 1515)
+        // Up from the bottom end, three: 1515, 1010, 505.
+        XCTAssertEqual(s.snapTarget(from: 1600, velocity: -5000, start: 2020, viewportHeight: vh, gap: 10, steps: 3), 505)
+        // Fewer than three left: it stops at the end.
+        XCTAssertEqual(s.snapTarget(from: 1600, velocity: 5000, start: 1515, viewportHeight: vh, gap: 10, steps: 3), 2020)
+    }
+
     func testMagneticSwipeWithUnevenAndTallWindows() {
         // 0-300, 310-1210, 1220-1520; max 520. Down from 0: row 1 is mostly shown, so its top
         // goes to the top edge (see the test above).
