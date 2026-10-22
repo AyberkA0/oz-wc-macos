@@ -157,7 +157,6 @@ With a scroll area set, the remaining screen space holds windows that do not scr
 
 While you drag, a pane of glass (clear Liquid Glass on macOS 26 and later, refracting what is behind it; frosted glass on earlier versions) previews where the window will land: its slot in a region, or the scroll area itself when it would join the strip.
 
-<p align="center"><img src="docs/media/regions.gif" alt="Windows tiled in the regions around the scroll area" width="720"></p>
 <p align="center"><img src="docs/media/tear-off.gif" alt="Dragging two windows out of the scroll area: the second one splits the region with the first" width="720"></p>
 
 <p align="center"><img src="docs/media/road.svg" alt="" width="100%"></p>
