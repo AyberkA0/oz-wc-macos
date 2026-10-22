@@ -1977,12 +1977,8 @@ final class WindowManager {
             let vh = viewport(g.screen).height
             let delta = CGFloat(dy * settings.swipe.sensitivity) * vh * (settings.swipe.natural ? 1 : -1)
             let maxS = g.strip.maxScroll(viewportHeight: vh, gap: settings.gap)
-            var s = g.strip.scrollY + delta
-            if s < 0 || s > maxS {
-                // Rubber band past the ends.
-                s = g.strip.scrollY + delta * 0.3
-                s = min(max(s, -vh * 0.25), maxS + vh * 0.25)
-            }
+            // The ends are hard stops: swiping on past them moves nothing.
+            let s = min(max(g.strip.scrollY + delta, 0), maxS)
             g.strip.scrollY = s
             g.strip.renderScrollY = s
             markDirty(g.key)
