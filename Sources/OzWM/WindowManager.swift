@@ -2288,6 +2288,7 @@ final class WindowManager {
             // The line follows the rows going by; at the end of the strip scrolling stops.
             updateDropPreview(force: true)
         }
+        overlays.syncShadows()
         if animations.isEmpty && gesture == nil && autoScroll == nil { driver.pause() }
     }
 

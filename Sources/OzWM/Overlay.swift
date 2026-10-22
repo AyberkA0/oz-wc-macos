@@ -390,6 +390,13 @@ enum ColorShift {
 /// Click target for a peeking window: clicking the visible strip brings the real window back.
 /// A click, not a press: acting on mouse down started scrolling while the button was still
 /// held, and a press that turns into a drag isn't a click.
+/// A stand-in's window: always exactly where it is put. AppKit otherwise pushes a window
+/// that reaches into the menu bar down below it, and a stand-in with room for its shadow
+/// above does: the picture jumped ~30 pt down, then slid back as it faded (a flicker).
+private final class StandInPanel: NSPanel {
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+}
+
 private final class PeekView: NSView {
     var onClick: (() -> Void)?
     private var downAt: NSPoint?
@@ -435,6 +442,13 @@ final class OverlayManager {
         /// thin one along the edge, as close to the system's as measured.
         let keyShadow = CALayer()
         let edgeShadow = CALayer()
+        /// The shadow it draws while moving, if any, and where (AX coordinates) the window is.
+        var ownShadow: ShadowKind?
+        var fullRect = CGRect.zero
+        /// The real window is on screen right under it: then its own shadow shows, and ours
+        /// stays off, or the two would add up (a darker flash). Followed every frame from the
+        /// window server (`syncShadows`), not guessed from when we asked the app to move it.
+        var realCovers = false
         /// Drawn and clickable. A hidden overlay stays ordered in, transparent and click-through:
         /// taking a window off screen (`orderOut`) and back is a window-server round trip that
         /// stalled the main thread for up to half a second, many times per swipe.
@@ -448,7 +462,7 @@ final class OverlayManager {
         var reference: CGImage?
 
         init() {
-            window = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
+            window = StandInPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
                              backing: .buffered, defer: false)
             window.isOpaque = false
             window.backgroundColor = .clear
@@ -526,6 +540,7 @@ final class OverlayManager {
             overlays[id] = o
         }
         o.expectedSize = full.size
+        if !o.shown { o.realCovers = OverlayManager.realWindowsCovering([id: full])[id] ?? false }
         if trueColor && o.reference == nil { o.reference = image }
         if live && stream && o.mirror == nil && !o.mirrorIdle { startMirror(o, id: id) }
 
@@ -623,7 +638,7 @@ final class OverlayManager {
     /// Corner radius of macOS windows (measured), for the shape of the drawn shadow.
     private static let cornerRadius: CGFloat = 18
 
-    private enum ShadowKind {
+    fileprivate enum ShadowKind {
         case captured(WindowShadow)
         case drawn
     }
@@ -651,20 +666,16 @@ final class OverlayManager {
             if (o.shadowLayer.contents as AnyObject?) !== s.image { o.shadowLayer.contents = s.image }
             o.shadowLayer.frame = CGRect(x: 0, y: content.minY - m.bottom, width: frame.width,
                                          height: full.height + m.top + m.bottom)
-            o.shadowLayer.isHidden = false
-        } else {
-            o.shadowLayer.isHidden = true
         }
-        let drawn: Bool
-        if case .drawn = shadow { drawn = true } else { drawn = false }
-        if drawn && content.size != o.contentFrame.size {
+        if case .drawn = shadow, content.size != o.contentFrame.size {
             let path = CGPath(roundedRect: CGRect(origin: .zero, size: content.size),
                               cornerWidth: Self.cornerRadius, cornerHeight: Self.cornerRadius, transform: nil)
             o.keyShadow.shadowPath = path
             o.edgeShadow.shadowPath = path
         }
-        o.keyShadow.isHidden = !drawn
-        o.edgeShadow.isHidden = !drawn
+        o.ownShadow = shadow
+        o.fullRect = full
+        Self.showShadow(o)
         o.contentFrame = content
         o.keyShadow.frame = content
         o.edgeShadow.frame = content
@@ -673,6 +684,78 @@ final class OverlayManager {
         let resized = o.window.frame.size != frame.size
         o.window.setFrame(frame, display: false)
         return resized
+    }
+
+    /// Our shadow layers on or off: the kind asked for, unless the real window is right under.
+    private static func showShadow(_ o: Overlay) {
+        var captured = false, drawn = false
+        if !o.realCovers {
+            switch o.ownShadow {
+            case .captured: captured = true
+            case .drawn: drawn = true
+            case nil: break
+            }
+        }
+        o.shadowLayer.isHidden = !captured
+        o.keyShadow.isHidden = !drawn
+        o.edgeShadow.isHidden = !drawn
+    }
+
+    /// Whether each real window is on screen covering most of the given frame (AX coordinates),
+    /// as the window server has it now. One query for all of them.
+    private static func realWindowsCovering(_ frames: [CGWindowID: CGRect]) -> [CGWindowID: Bool] {
+        guard !frames.isEmpty else { return [:] }
+        let ids = Array(frames.keys)
+        let values = UnsafeMutablePointer<UnsafeRawPointer?>.allocate(capacity: ids.count)
+        defer { values.deallocate() }
+        for (i, id) in ids.enumerated() { values[i] = UnsafeRawPointer(bitPattern: UInt(id)) }
+        guard let array = CFArrayCreate(nil, values, ids.count, nil),
+              let list = CGWindowListCreateDescriptionFromArray(array) as? [[String: Any]] else { return [:] }
+        var out: [CGWindowID: Bool] = [:]
+        for info in list {
+            guard let id = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value, let full = frames[id],
+                  let b = info[kCGWindowBounds as String] else { continue }
+            var r = CGRect.zero
+            CGRectMakeWithDictionaryRepresentation(b as! CFDictionary, &r)
+            let onScreen = (info[kCGWindowIsOnscreen as String] as? Bool) ?? false
+            let overlap = r.intersection(full)
+            out[id] = onScreen && !overlap.isNull && overlap.width * overlap.height >= full.width * full.height * 0.5
+        }
+        return out
+    }
+
+    /// Each frame something moves (and while handing over): our shadows follow whether the
+    /// real windows are under their stand-ins right now.
+    func syncShadows() {
+        var frames: [CGWindowID: CGRect] = [:]
+        for (id, o) in overlays where o.shown && o.ownShadow != nil { frames[id] = o.fullRect }
+        let covering = Self.realWindowsCovering(frames)
+        var changed: [Overlay] = []
+        for (id, covers) in covering {
+            guard let o = overlays[id], o.realCovers != covers else { continue }
+            o.realCovers = covers
+            changed.append(o)
+        }
+        guard !changed.isEmpty else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        changed.forEach(Self.showShadow)
+        CATransaction.commit()
+    }
+
+    /// Keeps `syncShadows` going after the motion stopped (the display link pauses then),
+    /// until every handover is through.
+    private var handoffTimer: Timer?
+    private func followHandoffs() {
+        guard handoffTimer == nil else { return }
+        handoffTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 120, repeats: true) { [weak self] t in
+            guard let self else { return t.invalidate() }
+            self.syncShadows()
+            if self.pendingHide.isEmpty && !self.overlays.values.contains(where: { $0.fading }) {
+                t.invalidate()
+                self.handoffTimer = nil
+            }
+        }
     }
 
     /// Stops every live stream but keeps the stand-ins (with their last frame) in place, e.g.
@@ -717,10 +800,12 @@ final class OverlayManager {
         o.expectedSize = frame.size
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        // The real window, back underneath, has its own shadow: two would darken it.
-        place(o, full: frame, top: frame.minY, bottom: frame.maxY, shadow: nil)
+        // Our shadow stays until the real window is really back underneath with its own
+        // (`syncShadows` sees it), not one frame less (no shadow) or more (two).
+        place(o, full: frame, top: frame.minY, bottom: frame.maxY, shadow: o.ownShadow)
         CATransaction.commit()
         o.window.display()
+        followHandoffs()
         guard pendingHide[id] == nil else { return }
         let item = DispatchWorkItem { [weak self] in self?.fadeOut(id) }
         pendingHide[id] = item
