@@ -505,8 +505,9 @@ final class OverlayManager {
     /// and below `clipBottom`. Also used as a stand-in for a whole window (a slow app's window
     /// while scrolling): then `full` lies between the two and nothing is cut off.
     /// `stream`: keep it live (if live peeks are on); stand-ins during a scroll don't.
-    /// `shadow`: drawn with a window shadow like the real one. `clickable`: it takes clicks
-    /// (a peek at rest). Otherwise (anything moving) the shadow is drawn in a margin around
+    /// `shadow`: drawn with a window shadow like the real one. `clickable`: a peek at rest,
+    /// drawn without a margin so it doesn't take clicks meant for the windows around it.
+    /// Otherwise (anything moving) the shadow is drawn in a margin around
     /// the picture, so it moves with it in the same frame and never has to be worked out
     /// again (the system's shadow is, on every size change, a frame or more late: flicker):
     /// `windowShadow`, the window's own as captured, so it is the very same as the real
@@ -569,10 +570,12 @@ final class OverlayManager {
             o.shadowStale = false
             o.window.invalidateShadow()
         }
-        if o.window.ignoresMouseEvents == clickable { o.window.ignoresMouseEvents = !clickable }
         if !o.shown {
             o.shown = true
             o.window.alphaValue = 1
+            // Always takes clicks while shown: a stand-in still up when the motion is over is
+            // the window as far as the user can tell (click-through, clicks hit the desktop).
+            o.window.ignoresMouseEvents = false
             // Over the windows that came forward while it was hidden, but under a dragged one.
             if let below {
                 o.window.order(.below, relativeTo: Int(below))

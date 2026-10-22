@@ -3005,9 +3005,9 @@ final class WindowManager {
     }
 
     /// The frontmost window on `screen` was made to fill it by its app (title bar double
-    /// click), whether the strip holds it or not, and Oz didn't notice: it covers the strip,
-    /// so a swipe would only move windows nobody can see. Oz's own placements never reach
-    /// the screen's edges (outer gap), so they don't count.
+    /// click, or the app's full screen), whether the strip holds it or not, and Oz didn't
+    /// notice: it covers the strip, so a swipe would only move windows nobody can see. (Oz's
+    /// own placements keep the outer gap, so they never reach every edge.)
     private func appFilledScreen(_ screen: NSScreen) -> Bool {
         let area = Geometry.ax(screen.visibleFrame)
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
@@ -3019,9 +3019,7 @@ final class WindowManager {
             CGRectMakeWithDictionaryRepresentation(b as! CFDictionary, &r)
             guard r.intersects(area) else { continue }
             // Only the frontmost window on this screen counts.
-            guard r.width >= area.width - 4 && r.height >= area.height - 4,
-                  let wid = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value else { return false }
-            if let placed = windows[wid]?.lastFrame, placed.approxEqual(r) { return false }
+            guard r.width >= area.width - 4 && r.height >= area.height - 4 else { return false }
             Log.debug("swipe ignored: \(info[kCGWindowOwnerName as String] ?? "?") fills the screen")
             return true
         }
