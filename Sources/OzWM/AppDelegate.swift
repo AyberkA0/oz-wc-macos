@@ -125,7 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func runDoubleTap() {
         let action = wm.settings.doubleTap.action
-        Log.debug("double tap -> \(action)")
+        Log.info("double tap -> \(action)")
         if action.hasPrefix("binding:"), let id = Int(action.dropFirst("binding:".count)) {
             config.runBinding(id)
         } else {
