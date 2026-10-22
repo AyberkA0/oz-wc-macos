@@ -126,6 +126,7 @@ final class WindowManager {
         var range: ClosedRange<CGFloat>
         /// How far the fingers have gone on the trackpad (trackpad heights, the way they went).
         var padTravel = 0.0
+        let startTime = CACurrentMediaTime()
     }
     private var gesture: GestureState?
 
@@ -2035,8 +2036,11 @@ final class WindowManager {
             let target: CGFloat
             switch settings.swipe.snap {
             case .always:
-                // A very strong swipe (most of the trackpad's height, fast) moves three windows.
-                let strong = abs(g.padTravel) >= Self.strongSwipeTravel && abs(v) >= Self.strongSwipeSpeed
+                // A very strong swipe (much of the trackpad's height, fast) moves three windows.
+                // Fingers slow down before they lift, so the speed over the whole swipe counts
+                // as well as the speed at the release.
+                let average = abs(g.padTravel) / max(CACurrentMediaTime() - g.startTime, 0.05)
+                let strong = abs(g.padTravel) >= Self.strongSwipeTravel && max(abs(v), average) >= Self.strongSwipeSpeed
                 target = g.strip.snapTarget(from: s, velocity: velocity, start: g.startScroll, viewportHeight: vh,
                                             gap: settings.gap, steps: strong ? 3 : 1)
             case .near, .off:
@@ -2165,9 +2169,10 @@ final class WindowManager {
     }
 
     /// A magnetic swipe this strong moves three windows instead of one: the fingers went this
-    /// much of the trackpad's height and let go at this many trackpad heights per second.
-    private static let strongSwipeTravel = 0.7
-    private static let strongSwipeSpeed = 3.0
+    /// much of the trackpad's height, at this many trackpad heights per second (on average
+    /// or when they let go).
+    private static let strongSwipeTravel = 0.5
+    private static let strongSwipeSpeed = 2.0
 
     private func animate(_ key: StripKey, duration: Double, spring: Animation.Spring? = nil) {
         guard let strip = strips[key] else { return }
