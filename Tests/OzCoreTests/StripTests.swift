@@ -239,12 +239,27 @@ final class StripTests: XCTestCase {
         XCTAssertEqual(s.snapTarget(from: 0, velocity: -900, start: 0, viewportHeight: vh, gap: 10), 0)
     }
 
-    func testMagneticSwipeWithUnevenAndTallWindows() {
-        // 0-300, 310-1210, 1220-1520; max 520. Down from 0: row 1 (bottom 1210) comes in.
+    func testMagneticSwipeGoesToTheFarEdgeOfAMostlyShownWindow() {
+        // 0-300, 310-1210, 1220-1520; max 520. At 0 row 1 shows 690 of 900 (77%): down,
+        // its top goes to the top edge (310) rather than its bottom to the bottom (210).
         let s = makeStrip([300, 900, 300])
-        XCTAssertEqual(s.snapTarget(from: 100, velocity: 0, start: 0, viewportHeight: vh, gap: 10), 210)
-        // Up from 520: row 1's top (310) is above the top edge: it comes in.
-        XCTAssertEqual(s.snapTarget(from: 400, velocity: 0, start: 520, viewportHeight: vh, gap: 10), 310)
+        XCTAssertEqual(s.snapTarget(from: 100, velocity: 0, start: 0, viewportHeight: vh, gap: 10), 310)
+        // 0-500, 510-1210, 1220-1920, 1930-2430; max 1430.
+        let u = makeStrip([500, 700, 700, 500])
+        // From 700, row 1 shows 510 of 700 (73%): up, its bottom goes to the bottom edge
+        // (1210 - 1000 = 210) rather than its top to the top (510).
+        XCTAssertEqual(u.snapTarget(from: 650, velocity: 0, start: 700, viewportHeight: vh, gap: 10), 210)
+        // From 1100 it shows 110 of 700 (16%): up, its top goes to the top edge.
+        XCTAssertEqual(u.snapTarget(from: 1050, velocity: 0, start: 1100, viewportHeight: vh, gap: 10), 510)
+    }
+
+    func testMagneticSwipeWithUnevenAndTallWindows() {
+        // 0-300, 310-1210, 1220-1520; max 520. Down from 0: row 1 is mostly shown, so its top
+        // goes to the top edge (see the test above).
+        let s = makeStrip([300, 900, 300])
+        XCTAssertEqual(s.snapTarget(from: 100, velocity: 0, start: 0, viewportHeight: vh, gap: 10), 310)
+        // Up from 520: row 1 shows 690 of 900 (77%), so its bottom goes to the bottom edge.
+        XCTAssertEqual(s.snapTarget(from: 400, velocity: 0, start: 520, viewportHeight: vh, gap: 10), 210)
         // A window taller than the screen: at most a screen per swipe.
         let tall = makeStrip([400, 2500, 400])  // 0-400, 410-2910, 2920-3320; max 2320
         XCTAssertEqual(tall.snapTarget(from: 50, velocity: 0, start: 0, viewportHeight: vh, gap: 10), 1000)

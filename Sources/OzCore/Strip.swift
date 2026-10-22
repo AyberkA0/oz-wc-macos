@@ -465,28 +465,41 @@ public final class Strip {
     /// how far or how fast it went. `start`: where the swipe began.
     ///
     /// Down: the next window not yet fully shown below comes in, its bottom on the bottom
-    /// edge. Up: the next one above, its top on the top edge. A window taller than the
-    /// screen moves it by at most a screen. A nudge (under `nudge` points, released slowly)
+    /// edge. Up: the next one above, its top on the top edge. If that window was already
+    /// mostly in view (over `mostlyShown` of its height) when the swipe began, it goes on to
+    /// the window's far edge instead: down, its top on the top edge; up, its bottom on the
+    /// bottom edge. A window taller than the screen moves it by at most a screen. A nudge (under `nudge` points, released slowly)
     /// goes back to where the swipe started; at an end of the strip it stays there.
     public func snapTarget(from s: CGFloat, velocity: CGFloat, start: CGFloat? = nil, viewportHeight vh: CGFloat,
-                           gap: CGFloat, nudge: CGFloat = 30) -> CGFloat {
+                           gap: CGFloat, nudge: CGFloat = 30, mostlyShown: CGFloat = 0.65) -> CGFloat {
         let from = clampScroll(start ?? s, viewportHeight: vh, gap: gap)
         let moved = s - from
         // Fingers slow down before they lift: a slow release goes the way the swipe went.
         let dir: CGFloat = abs(velocity) >= vh * 0.1 ? (velocity > 0 ? 1 : -1) : (abs(moved) >= nudge ? (moved > 0 ? 1 : -1) : 0)
+        func shown(_ top: CGFloat, _ bottom: CGFloat) -> CGFloat {
+            max(0, min(bottom, from + vh) - max(top, from)) / max(bottom - top, 1)
+        }
         var target = from
         if dir > 0 {
             for i in rows.indices {
                 let top = rowTop(i, gap: gap), bottom = top + rows[i].height
                 guard bottom > from + vh + 1 else { continue }
-                target = rows[i].height <= vh + 1 ? bottom - vh : min(bottom - vh, from + vh)
+                if rows[i].height > vh + 1 {
+                    target = min(bottom - vh, from + vh)
+                } else {
+                    target = shown(top, bottom) > mostlyShown && top > from + 1 ? top : bottom - vh
+                }
                 break
             }
         } else if dir < 0 {
             for i in rows.indices.reversed() {
                 let top = rowTop(i, gap: gap), bottom = top + rows[i].height
                 guard top < from - 1 else { continue }
-                target = rows[i].height <= vh + 1 ? top : max(top, from - vh)
+                if rows[i].height > vh + 1 {
+                    target = max(top, from - vh)
+                } else {
+                    target = shown(top, bottom) > mostlyShown && bottom - vh < from - 1 ? bottom - vh : top
+                }
                 break
             }
         }
