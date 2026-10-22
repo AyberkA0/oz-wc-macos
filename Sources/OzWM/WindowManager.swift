@@ -119,7 +119,12 @@ final class WindowManager {
     /// Windows waiting for their stand-in to reach the screen before being moved away.
     private var pendingParks: [CGWindowID: DispatchWorkItem] = [:]
 
-    private struct GestureState { let key: StripKey; let strip: Strip; let screen: NSScreen; let startScroll: CGFloat }
+    private struct GestureState {
+        let key: StripKey; let strip: Strip; let screen: NSScreen; let startScroll: CGFloat
+        /// How far the finger may move the strip: magnetic scrolling stops it at the next
+        /// window either way (it can't land further), otherwise the strip's ends.
+        var range: ClosedRange<CGFloat>
+    }
     private var gesture: GestureState?
 
     /// The window the user is resizing with the mouse right now; its neighbours reflow live.
@@ -152,6 +157,21 @@ final class WindowManager {
         let to: CGFloat
         let start: CFTimeInterval
         let duration: Double
+        /// Points (signed, the way it moves) to go past `to` before settling back on it.
+        var overshoot: CGFloat = 0
+
+        /// Scroll position at `t` (0...1 of the duration): eased out to `to`, or with an
+        /// overshoot, eased out to just past it (70% of the time), then gently back.
+        func scroll(at t: Double) -> CGFloat {
+            guard overshoot != 0 else { return from + (to - from) * CGFloat(1 - pow(1 - t, 3)) }
+            let split = 0.7
+            if t < split {
+                let u = t / split
+                return from + (to + overshoot - from) * CGFloat(1 - pow(1 - u, 3))
+            }
+            let u = (t - split) / (1 - split)
+            return to + overshoot * CGFloat(1 - u * u * (3 - 2 * u))
+        }
     }
     private var animations: [StripKey: Animation] = [:]
     /// Where each window of a strip was when a command rearranged it: during the strip's
@@ -1967,7 +1987,15 @@ final class WindowManager {
             pendingActivation[key] = nil
             pinned.subtract(strip.windowIDs)
             strip.scrollY = strip.renderScrollY
-            gesture = GestureState(key: key, strip: strip, screen: screen, startScroll: strip.scrollY)
+            let vh = viewport(screen).height
+            var range = 0...strip.maxScroll(viewportHeight: vh, gap: settings.gap)
+            if settings.swipe.snap == .always {
+                let s = strip.scrollY, far = vh * 100
+                let up = strip.snapTarget(from: s - far, velocity: -far, start: s, viewportHeight: vh, gap: settings.gap)
+                let down = strip.snapTarget(from: s + far, velocity: far, start: s, viewportHeight: vh, gap: settings.gap)
+                range = min(up, s)...max(down, s)
+            }
+            gesture = GestureState(key: key, strip: strip, screen: screen, startScroll: strip.scrollY, range: range)
             overlays.wake()
             prepareProxies(strip)
             Log.debug("swipe began")
@@ -1976,9 +2004,8 @@ final class WindowManager {
             guard let g = gesture else { return }
             let vh = viewport(g.screen).height
             let delta = CGFloat(dy * settings.swipe.sensitivity) * vh * (settings.swipe.natural ? 1 : -1)
-            let maxS = g.strip.maxScroll(viewportHeight: vh, gap: settings.gap)
-            // The ends are hard stops: swiping on past them moves nothing.
-            let s = min(max(g.strip.scrollY + delta, 0), maxS)
+            // Hard stops: the strip's ends, or the next window for magnetic scrolling.
+            let s = min(max(g.strip.scrollY + delta, g.range.lowerBound), g.range.upperBound)
             g.strip.scrollY = s
             g.strip.renderScrollY = s
             markDirty(g.key)
@@ -2007,7 +2034,14 @@ final class WindowManager {
             if abs(velocity) > 50 && distance > 1 {
                 duration = min(max(Double(3 * distance / abs(velocity)), 0.15), 0.7)
             }
-            animate(g.key, duration: duration)
+            // Magnetic: arriving at the next window it bounces, as far as the way it came.
+            var overshoot: CGFloat = 0
+            if settings.swipe.snap == .always {
+                let travel = target - g.startScroll
+                overshoot = (travel.sign == .minus ? -1 : 1) * min(abs(travel) * 0.06, 48)
+                if abs(travel) < 1 { overshoot = 0 } else { duration = max(duration, 0.4) }
+            }
+            animate(g.key, duration: duration, overshoot: overshoot)
             if settings.swipe.focus {
                 var focusID = g.strip.focused
                 if focusID == nil || !g.strip.isFullyVisible(focusID!, scroll: target, viewportHeight: vh, gap: settings.gap),
@@ -2104,7 +2138,7 @@ final class WindowManager {
         }
     }
 
-    private func animate(_ key: StripKey, duration: Double) {
+    private func animate(_ key: StripKey, duration: Double, overshoot: CGFloat = 0) {
         guard let strip = strips[key] else { return }
         // Retargeted mid-way: a pinned window's final frame is no longer final.
         if animations[key] != nil { pinned.subtract(strip.windowIDs) }
@@ -2115,7 +2149,7 @@ final class WindowManager {
             transitions[key] = visualFrames(key)
         }
         animations[key] = Animation(strip: strip, from: strip.renderScrollY, to: strip.scrollY,
-                                    start: CACurrentMediaTime(), duration: duration)
+                                    start: CACurrentMediaTime(), duration: duration, overshoot: overshoot)
         prepareProxies(strip)
         driver.start()
     }
@@ -2185,8 +2219,7 @@ final class WindowManager {
         var finished: [StripKey] = []
         for (key, a) in animations {
             let t = min(1, (now - a.start) / max(a.duration, 0.001))
-            let eased = 1 - pow(1 - t, 3)
-            a.strip.renderScrollY = a.from + (a.to - a.from) * CGFloat(eased)
+            a.strip.renderScrollY = a.scroll(at: t)
             dirty.insert(key)
             if t >= 1 {
                 animations.removeValue(forKey: key)
