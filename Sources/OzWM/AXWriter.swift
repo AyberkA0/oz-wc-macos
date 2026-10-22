@@ -158,6 +158,10 @@ final class FrameDriver: NSObject {
     func start() {
         if link == nil, let screen = NSScreen.main ?? NSScreen.screens.first {
             let l = screen.displayLink(target: self, selector: #selector(step(_:)))
+            // Unasked, macOS paces the link as it sees fit (measured: 35 fps on a 120 Hz
+            // ProMotion screen): ask for the screen's full rate.
+            let fps = Float(NSScreen.screens.map(\.maximumFramesPerSecond).max() ?? 60)
+            l.preferredFrameRateRange = CAFrameRateRange(minimum: min(60, fps), maximum: fps, preferred: fps)
             l.add(to: .main, forMode: .common)
             link = l
         }
