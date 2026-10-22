@@ -31,7 +31,7 @@
   └───────────────────────────┘
 ```
 
-<p align="center"><img src="docs/media/swipe.svg" alt="Scrolling the strip with a three-finger swipe" width="720"></p>
+<p align="center"><img src="docs/media/swipe.gif" alt="Scrolling the strip with a three-finger swipe" width="720"></p>
 
 **Highlights**
 
@@ -98,7 +98,7 @@ Menu bar › *Magnetic Scrolling (Stop at Windows)* makes every swipe come to re
 
 When Oz opens Mission Control or App Exposé (double tap, `⌃⌥ m`, `⌃⌥⇧ m`), it first brings off-screen windows onto the screen so the overview shows them at a normal size, and returns them to the strip when the overview closes. When the overview is opened another way (four-finger swipe, the Mission Control key), off-screen windows appear small.
 
-<p align="center"><img src="docs/media/mission-control.svg" alt="Mission Control with every window at full size" width="720"></p>
+<p align="center"><img src="docs/media/mission-control.gif" alt="Mission Control with every window at full size" width="720"></p>
 
 ### Rows and widths
 
@@ -115,7 +115,7 @@ When Oz opens Mission Control or App Exposé (double tap, `⌃⌥ m`, `⌃⌥⇧
 - **Undo** (`⌃⌥ z`) reverts the strip to its state before the last change: keyboard moves and resizes, drag and drop, mouse resizes, or a window dragged out of the scroll area (which returns to the strip). Up to 20 steps per strip.
 - **Saved layouts.** Each desktop's arrangement (rows, heights, widths, positions within rows, scroll position, focus, and windows placed around the scroll area) is saved to `~/Library/Application Support/Oz/layout.json` whenever it changes and when Oz quits, and restored on the next launch. Windows are matched by their window ID (stable while the app keeps running) or, if the app was restarted, by application and title. Unrecognised windows are appended after the restored ones.
 
-<p align="center"><img src="docs/media/maximize.svg" alt="Double-clicking a title bar to fill the screen" width="720"></p>
+<p align="center"><img src="docs/media/maximize.gif" alt="Double-clicking a title bar to fill the screen" width="720"></p>
 
 ### Desktop presets
 
@@ -144,7 +144,7 @@ While you drag a window over the scroll area, a rod of glass shows where it will
 
 Release to move the window into that slot. This also applies to windows already in the strip, so the strip can be reordered by dragging. If no line appears, the window would return to its current position. To reach rows outside the view, hold the cursor in the band along the scroll area's top or bottom edge (15% of its height): the strip starts scrolling after a short delay, faster closer to the edge. Scrolling only becomes available once the drag has passed through the middle of the scroll area, so picking up a window by its title bar near the top does not trigger it.
 
-<p align="center"><img src="docs/media/split-lines.svg" alt="Dragging a window between rows" width="720"></p>
+<p align="center"><img src="docs/media/split-lines.gif" alt="Dragging a window between rows" width="720"></p>
 
 ### Windows around the scroll area
 
@@ -157,7 +157,7 @@ With a scroll area set, the remaining screen space holds windows that do not scr
 
 While you drag, a pane of glass (clear Liquid Glass on macOS 26 and later, refracting what is behind it; frosted glass on earlier versions) previews where the window will land: its slot in a region, or the scroll area itself when it would join the strip.
 
-<p align="center"><img src="docs/media/regions.svg" alt="Windows tiled in the regions around the scroll area" width="720"></p>
+<p align="center"><img src="docs/media/regions.gif" alt="Windows tiled in the regions around the scroll area" width="720"></p>
 <p align="center"><img src="docs/media/tear-off.svg" alt="Tearing a tab off into a region" width="720"></p>
 
 <p align="center"><img src="docs/media/road.svg" alt="" width="100%"></p>
@@ -193,7 +193,7 @@ Menu bar › *Settings…* (⌘,) covers the common options: starting Oz at logi
 
 Menu bar › *Keep Windows Alive (Live Capture)* controls how windows cut off at an edge are drawn. When enabled, they are captured continuously (`livePeekFPS`) so video keeps playing; when disabled, Oz captures a single image when a window reaches the edge, so screen capture (and the system's recording indicator) is active only briefly. *Capture resolution* in Settings (`captureScale`) sets how sharp these images are: 1x (the default) keeps the window's own resolution, while 0.75x, 0.5x and 0.25x use less memory and less work per frame, at the cost of softer text while a window is drawn from an image.
 
-<p align="center"><img src="docs/media/settings.svg" alt="The Settings window" width="720"></p>
+<p align="center"><img src="docs/media/settings.png" alt="The Settings window" width="480"></p>
 
 <p align="center"><img src="docs/media/road.svg" alt="" width="100%"></p>
 
@@ -267,4 +267,4 @@ build/Oz.app/Contents/MacOS/OzWM msg setHeight 0.5
 - Mission Control opened without Oz (four-finger swipe or the Mission Control key) shows off-screen windows at a small size.
 - The log is at `~/Library/Logs/OzWM.log` (`debug: true` for verbose output). Main-thread delays are logged as `[stall]` with the code responsible, and slow applications as `[slow]`.
 
-<p align="center"><sub>Usage animations are placeholders. To add one, place a <code>.gif</code> with the same name next to the corresponding file in <code>docs/media/</code> and update the image path above.</sub></p>
+<p align="center"><sub>The animations were recorded with demo mode (⌃⌥⇧O). The scroll area editor and tab tear-off are still placeholders: to add one, place a <code>.gif</code> with the same name next to the corresponding file in <code>docs/media/</code> and update the image path above.</sub></p>
