@@ -468,10 +468,14 @@ public final class Strip {
     /// the shorter way to clear it, back (its top on the top edge) or on (the next row's top
     /// there). Fingers slow down before they lift, so a slow release still goes the way the
     /// swipe went; only a nudge (under `nudge` points) falls back to the nearest. A window
-    /// taller than the screen can't come fully in and isn't pulled to.
+    /// taller than the screen can't come fully in and isn't pulled to. At either end of the
+    /// strip it stays there.
     public func snapTarget(from s: CGFloat, velocity: CGFloat, start: CGFloat? = nil, viewportHeight vh: CGFloat,
                            gap: CGFloat, momentum: CGFloat = 1, nudge: CGFloat = 30) -> CGFloat {
         let p = clampScroll(s + velocity * 0.25 * momentum, viewportHeight: vh, gap: gap).rounded()
+        // Either end of the strip is a resting place of its own: pushing on against it, or
+        // gliding into it, never pulls the strip back in.
+        if p <= 0 || p >= maxScroll(viewportHeight: vh, gap: gap).rounded() { return p }
         let moved = p - (start ?? s)
         // +1 down, -1 up, 0 undecided.
         let dir: CGFloat = abs(velocity) >= vh * 0.1 ? (velocity > 0 ? 1 : -1) : (abs(moved) >= nudge ? (moved > 0 ? 1 : -1) : 0)

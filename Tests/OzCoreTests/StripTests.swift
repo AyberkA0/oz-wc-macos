@@ -236,11 +236,23 @@ final class StripTests: XCTestCase {
         // Nothing cut (both edges on whole windows): stays.
         XCTAssertEqual(s.snapTarget(from: 505, velocity: 0, viewportHeight: vh, gap: 10), 505)
         // Only the bottom one cut: its bottom goes to the bottom edge, not its top to the top.
-        let two = makeStrip([300, 900])
-        XCTAssertEqual(two.snapTarget(from: 0, velocity: 0, viewportHeight: vh, gap: 10), 210)
+        let two = makeStrip([300, 900, 300])  // 0-300, 310-1210, 1220-1520; max 520
+        XCTAssertEqual(two.snapTarget(from: 150, velocity: 0, viewportHeight: vh, gap: 10), 210)
         // A window taller than the screen isn't pulled to.
         let tall = makeStrip([400, 1500, 400])
         XCTAssertEqual(tall.snapTarget(from: 900, velocity: 0, viewportHeight: vh, gap: 10), 900)
+    }
+
+    func testMagneticSnapStaysAtTheEnds() {
+        // Rows at 0-600, 610-1010, 1020-1620; max scroll 620. At the bottom end row 0 is
+        // cut at the top, at the top end row 2 at the bottom: neither pulls the strip in.
+        let s = makeStrip([600, 400, 600])
+        XCTAssertEqual(s.snapTarget(from: 620, velocity: 0, start: 620, viewportHeight: vh, gap: 10), 620)
+        XCTAssertEqual(s.snapTarget(from: 620, velocity: 500, start: 620, viewportHeight: vh, gap: 10), 620)
+        XCTAssertEqual(s.snapTarget(from: 0, velocity: 0, start: 0, viewportHeight: vh, gap: 10), 0)
+        XCTAssertEqual(s.snapTarget(from: 0, velocity: -500, start: 0, viewportHeight: vh, gap: 10), 0)
+        // Gliding into an end stops there too.
+        XCTAssertEqual(s.snapTarget(from: 500, velocity: 2000, start: 300, viewportHeight: vh, gap: 10), 620)
     }
 
     func testMagneticSnapNeverPullsBackAgainstTheSwipe() {
