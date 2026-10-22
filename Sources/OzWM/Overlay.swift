@@ -174,16 +174,30 @@ final class SnapshotCache {
         }
     }
 
-    /// 8x8 thumbnail bytes: cheap way to tell whether two frames differ.
-    static func signature(_ image: CGImage) -> [UInt8] {
-        let n = 8
-        var pixels = [UInt8](repeating: 0, count: n * n * 4)
-        guard let ctx = CGContext(data: &pixels, width: n, height: n, bitsPerComponent: 8, bytesPerRow: n * 4,
-                                  space: CGColorSpaceCreateDeviceRGB(),
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return [] }
-        ctx.interpolationQuality = .low
-        ctx.draw(image, in: CGRect(x: 0, y: 0, width: n, height: n))
-        return pixels
+    /// Fingerprint of a frame's pixels, to tell whether two frames differ: every fourth row of
+    /// its bytes folded together (a line of text spans 24+ rows on Retina). A few characters of
+    /// new text count; an 8x8 thumbnail, sampling 64 points, missed them, so a terminal
+    /// printing looked idle and its live peek froze. ~3 ms for a large window, off the main thread.
+    static func signature(_ image: CGImage) -> Int {
+        guard let data = image.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return 0 }
+        let row = image.bytesPerRow, length = CFDataGetLength(data)
+        let words = UnsafeRawPointer(bytes).assumingMemoryBound(to: UInt64.self)
+        let perRow = row / 8, prime: UInt64 = 1_099_511_628_211
+        // Four independent lanes: the multiplications don't wait on each other.
+        var l0: UInt64 = 14_695_981_039_346_656_037, l1 = l0 &+ 1, l2 = l0 &+ 2, l3 = l0 &+ 3
+        for y in stride(from: 0, to: image.height, by: 4) where (y + 1) * row <= length {
+            let base = y * perRow
+            var i = 0
+            while i + 4 <= perRow {
+                l0 = (l0 ^ words[base + i]) &* prime
+                l1 = (l1 ^ words[base + i + 1]) &* prime
+                l2 = (l2 ^ words[base + i + 2]) &* prime
+                l3 = (l3 ^ words[base + i + 3]) &* prime
+                i += 4
+            }
+            while i < perRow { l0 = (l0 ^ words[base + i]) &* prime; i += 1 }
+        }
+        return Int(truncatingIfNeeded: l0 ^ (l1 &* 3) ^ (l2 &* 5) ^ (l3 &* 7))
     }
 
     /// True if the image is (almost) fully transparent.
@@ -204,9 +218,9 @@ final class SnapshotCache {
 /// playing video, scrolling text, etc. instead of showing a still.
 final class LiveMirror {
     let id: CGWindowID
-    /// Main thread: (frame, tiny signature for change detection). The frame is nil when the
+    /// Main thread: (frame, signature for change detection). The frame is nil when the
     /// window hasn't changed since the last one (nothing to correct or draw).
-    var onFrame: ((CGImage?, [UInt8]) -> Void)?
+    var onFrame: ((CGImage?, Int) -> Void)?
     private let fps: Double
     private let scale: CGFloat
     private var timer: DispatchSourceTimer?
@@ -217,7 +231,7 @@ final class LiveMirror {
     private var sinceMeasure = 0
     private var measured = false
     /// Signature of the last captured frame as captured (before any colour correction).
-    private var lastRaw: [UInt8] = []
+    private var lastRaw: Int?
 
     /// True-colour snapshot of the window: every frame's colours are measured against it
     /// and corrected (see ColorShift) before delivery.
@@ -433,7 +447,7 @@ final class OverlayManager {
         var isLive = false
         /// The mirror was stopped because nothing changed; the last frame stays up.
         var mirrorIdle = false
-        var lastSignature: [UInt8] = []
+        var lastSignature: Int?
         var unchangedFrames = 0
         /// Row size the stand-in represents (the window may be taller if the app refused).
         var expectedSize = CGSize.zero
@@ -761,7 +775,7 @@ final class OverlayManager {
         o.isLive = false
         o.mirrorIdle = false
         o.unchangedFrames = 0
-        o.lastSignature = []
+        o.lastSignature = nil
         if !keepImage { o.image = nil }
     }
 
