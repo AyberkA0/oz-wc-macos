@@ -157,20 +157,32 @@ final class WindowManager {
         let to: CGFloat
         let start: CFTimeInterval
         let duration: Double
-        /// Points (signed, the way it moves) to go past `to` before settling back on it.
-        var overshoot: CGFloat = 0
+        /// A damped spring instead of the ease-out: it starts at this speed (points/s, the
+        /// way the strip moves) and swings past `to` before it settles there.
+        var spring: Spring?
 
-        /// Scroll position at `t` (0...1 of the duration): eased out to `to`, or with an
-        /// overshoot, eased out to just past it (70% of the time), then gently back.
-        func scroll(at t: Double) -> CGFloat {
-            guard overshoot != 0 else { return from + (to - from) * CGFloat(1 - pow(1 - t, 3)) }
-            let split = 0.7
-            if t < split {
-                let u = t / split
-                return from + (to + overshoot - from) * CGFloat(1 - pow(1 - u, 3))
+        struct Spring {
+            static let damping = 0.6                // 1 = no swing past, lower = more
+            static let omega = 2 * Double.pi / 0.45 // natural period 0.45 s
+            let a: Double, b: Double, decay: Double, freq: Double
+            /// Offset from the target `x0` with velocity `v0` (both points / points per s).
+            init(x0: Double, v0: Double) {
+                decay = Self.damping * Self.omega
+                freq = Self.omega * (1 - Self.damping * Self.damping).squareRoot()
+                a = x0
+                b = (v0 + decay * x0) / freq
             }
-            let u = (t - split) / (1 - split)
-            return to + overshoot * CGFloat(1 - u * u * (3 - 2 * u))
+            func offset(at time: Double) -> Double { exp(-decay * time) * (a * cos(freq * time) + b * sin(freq * time)) }
+            /// Time until it is within half a point of the target for good.
+            var duration: Double { max(0.1, log(max((a * a + b * b).squareRoot(), 0.5) / 0.5) / decay) }
+        }
+
+        /// Scroll position at `t` (0...1 of the duration).
+        func scroll(at t: Double) -> CGFloat {
+            if let spring {
+                return t >= 1 ? to : to + CGFloat(spring.offset(at: t * duration))
+            }
+            return from + (to - from) * CGFloat(1 - pow(1 - t, 3))
         }
     }
     private var animations: [StripKey: Animation] = [:]
@@ -2034,14 +2046,22 @@ final class WindowManager {
             if abs(velocity) > 50 && distance > 1 {
                 duration = min(max(Double(3 * distance / abs(velocity)), 0.15), 0.7)
             }
-            // Magnetic: arriving at the next window it bounces, as far as the way it came.
-            var overshoot: CGFloat = 0
+            // Magnetic: it carries on at the finger's speed into a spring on the next window,
+            // so it swings past and settles like something with weight. The speed is held to
+            // 1.5-3x the way from where the swipe began, so the swing grows with the way
+            // (about 4-8% of it) whether the finger lifted slowly or threw it.
+            var spring: Animation.Spring?
             if settings.swipe.snap == .always {
                 let travel = target - g.startScroll
-                overshoot = (travel.sign == .minus ? -1 : 1) * min(abs(travel) * 0.06, 48)
-                if abs(travel) < 1 { overshoot = 0 } else { duration = max(duration, 0.4) }
+                if abs(travel) >= 1 {
+                    let toward = travel > 0 ? max(velocity, 0) : max(-velocity, 0)
+                    let speed = min(max(toward, abs(travel) * 1.5), abs(travel) * 3)
+                    let sp = Animation.Spring(x0: Double(s - target), v0: Double(travel > 0 ? speed : -speed))
+                    spring = sp
+                    duration = sp.duration
+                }
             }
-            animate(g.key, duration: duration, overshoot: overshoot)
+            animate(g.key, duration: duration, spring: spring)
             if settings.swipe.focus {
                 var focusID = g.strip.focused
                 if focusID == nil || !g.strip.isFullyVisible(focusID!, scroll: target, viewportHeight: vh, gap: settings.gap),
@@ -2138,7 +2158,7 @@ final class WindowManager {
         }
     }
 
-    private func animate(_ key: StripKey, duration: Double, overshoot: CGFloat = 0) {
+    private func animate(_ key: StripKey, duration: Double, spring: Animation.Spring? = nil) {
         guard let strip = strips[key] else { return }
         // Retargeted mid-way: a pinned window's final frame is no longer final.
         if animations[key] != nil { pinned.subtract(strip.windowIDs) }
@@ -2149,7 +2169,7 @@ final class WindowManager {
             transitions[key] = visualFrames(key)
         }
         animations[key] = Animation(strip: strip, from: strip.renderScrollY, to: strip.scrollY,
-                                    start: CACurrentMediaTime(), duration: duration, overshoot: overshoot)
+                                    start: CACurrentMediaTime(), duration: duration, spring: spring)
         prepareProxies(strip)
         driver.start()
     }
@@ -2319,7 +2339,7 @@ final class WindowManager {
                 let wasShowing = overlays.isShowing(w.id)
                 if !wasShowing { Log.debug("overlay on \(w.id) \(w.appName)") }
                 overlays.show(w.id, image: image, full: full, clipTop: hardTop, clipBottom: clipBottom,
-                              trueColor: snapshots.isOnScreenCapture(w.id), below: dragging)
+                              trueColor: snapshots.isOnScreenCapture(w.id), shadow: true, below: dragging)
                 // Park it (at its full row size, so the live mirror isn't squashed) only once
                 // the stand-in is on screen: a fresh overlay needs a frame or two to appear.
                 if w.parked || pendingParks[w.id] != nil {

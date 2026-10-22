@@ -381,6 +381,8 @@ final class OverlayManager {
         /// The window it was last ordered just below (a window being dragged), if any.
         var orderedBelow: CGWindowID?
         var fading = false
+        /// The content changed since the window shadow was last worked out.
+        var shadowStale = true
         /// Snapshot with true on-screen colours, to calibrate the live stream against.
         var reference: CGImage?
 
@@ -414,7 +416,7 @@ final class OverlayManager {
     /// and below `clipBottom`. Also used as a stand-in for a whole window (a slow app's window
     /// while scrolling): then `full` lies between the two and nothing is cut off.
     /// `stream`: keep it live (if live peeks are on); stand-ins during a scroll don't.
-    /// `shadow`: a whole window, drawn with a window shadow like the real one.
+    /// `shadow`: drawn with a window shadow like the real one.
     /// `below`: a window being dragged, which must stay on top of the stand-ins.
     func show(_ id: CGWindowID, image: CGImage, full: CGRect, clipTop: CGFloat,
               clipBottom: CGFloat = .greatestFiniteMagnitude, trueColor: Bool = false,
@@ -455,14 +457,26 @@ final class OverlayManager {
         if !o.isLive && o.image !== image {
             o.image = image
             o.imageLayer.contents = image
+            o.shadowStale = true
         }
         o.imageLayer.contentsScale = o.window.backingScaleFactor
         OverlayManager.layoutImage(o, in: full.size)
         CATransaction.commit()
 
         // Layer-backed content: no need to force a synchronous redraw every frame.
+        let resized = o.window.frame.size != frame.size
         o.window.setFrame(frame, display: false)
-        if o.window.hasShadow != shadow { o.window.hasShadow = shadow }
+        if o.window.hasShadow != shadow {
+            o.window.hasShadow = shadow
+            o.shadowStale = true
+        }
+        // The window server works the shadow out from the content once and keeps it: worked
+        // out while the stand-in was still empty, or before it changed shape, it would stay
+        // missing or wrong. A move alone keeps it.
+        if shadow && (resized || o.shadowStale) {
+            o.shadowStale = false
+            o.window.invalidateShadow()
+        }
         if !o.shown {
             o.shown = true
             o.window.alphaValue = 1
