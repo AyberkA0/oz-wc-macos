@@ -386,6 +386,7 @@ private final class Board {
 
     init(screen: NSScreen) {
         displayID = Geometry.displayID(screen)
+        screenFrame = screen.frame
         window = StandInPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
                               backing: .buffered, defer: false)
         window.isOpaque = false
@@ -400,14 +401,30 @@ private final class Board {
         view.wantsLayer = true
         window.contentView = view
         root = view.layer!
-        window.setFrame(screen.frame, display: false)
+        // The layers keep the screen's coordinates whatever size the window is.
+        view.autoresizingMask = []
+        cover(false)
     }
+
+    /// The screen it covers while it draws (AppKit coordinates).
+    let screenFrame: NSRect
 
     /// `r` (AX coordinates) in the board's layer coordinates.
     func local(_ r: CGRect) -> CGRect {
-        let f = Geometry.ax(window.frame)
+        let f = Geometry.ax(screenFrame)
         return CGRect(x: r.minX - f.minX, y: f.maxY - r.maxY, width: r.width, height: r.height)
     }
+
+    /// Over the whole screen while it draws, a pixel in a corner while it holds nothing:
+    /// even transparent and click-through, a window over the wallpaper made macOS stop taking
+    /// a click on the wallpaper for one (no more "click wallpaper to reveal desktop").
+    func cover(_ on: Bool) {
+        let frame = on ? screenFrame : NSRect(x: screenFrame.minX, y: screenFrame.minY, width: 1, height: 1)
+        guard window.frame != frame else { return }
+        window.setFrame(frame, display: false)
+    }
+
+    var isEmpty: Bool { root.sublayers?.isEmpty ?? true }
 
     /// In front of the windows (or just below one being dragged). `again`: windows may have
     /// come forward since (an app activated), so order it even if nothing changed.
@@ -510,7 +527,7 @@ final class OverlayManager {
     private func board(for r: CGRect) -> Board? {
         guard let screen = Geometry.screen(containingAX: CGPoint(x: r.midX, y: r.midY)) else { return nil }
         let id = Geometry.displayID(screen)
-        if let b = boards[id], Geometry.ax(b.window.frame) == Geometry.ax(screen.frame) { return b }
+        if let b = boards[id], b.screenFrame == screen.frame { return b }
         boards[id]?.window.orderOut(nil)
         let b = Board(screen: screen)
         boards[id] = b
@@ -629,6 +646,7 @@ final class OverlayManager {
             o.boardClip.opacity = 1
             o.boardImage.contentsScale = b.window.backingScaleFactor
             o.boardClip.frame = b.local(visible)
+            if first { b.cover(true) }
             b.order(below: below, again: first)
             if o.inWindow {
                 // Moving on: the window's copy goes (the board's is already up, this commit).
@@ -658,11 +676,13 @@ final class OverlayManager {
                 // The window takes a frame or so to show: the board's copy stays until then.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak o] in
                     guard let o, o.inWindow else { return }
+                    let b = o.board
                     CATransaction.begin()
                     CATransaction.setDisableActions(true)
                     o.boardClip.removeFromSuperlayer()
                     CATransaction.commit()
                     o.board = nil
+                    if let b, b.isEmpty { b.cover(false) }
                 }
             }
         } else if let below, o.orderedBelow != below {
@@ -789,6 +809,7 @@ final class OverlayManager {
         o.boardClip.opacity = 1
         o.setImage(nil)
         CATransaction.commit()
+        if let b = o.board, b.isEmpty { b.cover(false) }
         o.board = nil
         if o.inWindow {
             NSAnimationContext.runAnimationGroup { ctx in
@@ -811,6 +832,7 @@ final class OverlayManager {
         pendingHide.removeValue(forKey: id)?.cancel()
         stopLive(o)
         o.boardClip.removeFromSuperlayer()
+        if let b = o.board, b.isEmpty { b.cover(false) }
         o.window.orderOut(nil)
     }
 
