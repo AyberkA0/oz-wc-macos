@@ -1195,10 +1195,14 @@ final class WindowManager {
             // Held down and moved away from where it was pressed: the user is dragging (or
             // resizing). Held still, a window moving is Oz's (or its app's) doing, not a drag.
             let mouseDown = NSEvent.pressedMouseButtons & 1 != 0 && cursorMovedSinceMouseDown()
+            // Moved with the pointer on it: dragged. macOS moving windows aside (a click on the
+            // wallpaper to show the desktop, and back) while the button happened to be down
+            // was taken for a drag, and a window from a region was dropped into the strip.
+            let dragged = mouseDown && notification == kAXWindowMovedNotification && pointerOn(w.id)
             if floating[w.id] != nil {
                 // Dragging a window taken out of the strip: it may be dropped back in.
                 let ours = CACurrentMediaTime() - (dockPlacedAt[w.id] ?? 0) < 0.6
-                if notification == kAXWindowMovedNotification && mouseDown && manualFloat.contains(w.id) && !ours {
+                if dragged && manualFloat.contains(w.id) && !ours {
                     pendingDrops.insert(w.id)
                     dragging = w.id
                     updateDropPreview()
@@ -1220,7 +1224,7 @@ final class WindowManager {
                 if dragging == w.id { dragging = nil; dropPreview.hide() }
                 trackLiveResize(w)
             }
-            if notification == kAXWindowMovedNotification && mouseDown {
+            if dragged {
                 userDragged[w.id] = CACurrentMediaTime()
                 if liveResize == nil && resizeDrag != w.id {
                     dragging = w.id
@@ -1339,6 +1343,19 @@ final class WindowManager {
             strip.scrollY = target
             relayout(key, animated: true)
         }
+    }
+
+    /// The mouse pointer is on the window (as the window server has it now, with a few
+    /// points to spare for its edge).
+    private func pointerOn(_ id: CGWindowID) -> Bool {
+        var value = UnsafeRawPointer(bitPattern: UInt(id))
+        guard let array = CFArrayCreate(nil, &value, 1, nil),
+              let info = (CGWindowListCreateDescriptionFromArray(array) as? [[String: Any]])?.first,
+              let b = info[kCGWindowBounds as String] else { return false }
+        var r = CGRect.zero
+        CGRectMakeWithDictionaryRepresentation(b as! CFDictionary, &r)
+        let m = NSEvent.mouseLocation
+        return r.insetBy(dx: -8, dy: -8).contains(CGPoint(x: m.x, y: Geometry.primaryHeight - m.y))
     }
 
     private func cursorMovedSinceMouseDown() -> Bool {
