@@ -1993,8 +1993,7 @@ final class WindowManager {
             let target: CGFloat
             switch settings.swipe.snap {
             case .always:
-                target = g.strip.snapTarget(from: s, velocity: velocity, start: g.startScroll, viewportHeight: vh,
-                                            gap: settings.gap, momentum: CGFloat(settings.swipe.momentum))
+                target = g.strip.snapTarget(from: s, velocity: velocity, start: g.startScroll, viewportHeight: vh, gap: settings.gap)
             case .near, .off:
                 target = g.strip.restingScroll(from: s, velocity: velocity, viewportHeight: vh, gap: settings.gap,
                                                snapDistance: settings.swipe.snap == .near ? settings.swipe.snapDistance : 0,
