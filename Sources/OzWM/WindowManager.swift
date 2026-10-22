@@ -1962,7 +1962,7 @@ final class WindowManager {
             let key = visibleKey(for: screen)
             // A window fills the screen: there is nothing to scroll into view.
             guard let strip = strips[key], !strip.isEmpty, maximizedID(key) == nil,
-                  !untiledWindowFills(screen) else { return }
+                  !appFilledScreen(screen) else { return }
             stopAnimation(key)
             pendingActivation[key] = nil
             pinned.subtract(strip.windowIDs)
@@ -2935,10 +2935,11 @@ final class WindowManager {
         Geometry.ax(screen.usableFrame).insetBy(dx: settings.outerGap, dy: settings.outerGap)
     }
 
-    /// The frontmost window on `screen` is one the strip doesn't hold (docked in a region,
-    /// floating) and its app made it fill the screen (title bar double click): it covers the
-    /// strip, so a swipe would only move windows nobody can see.
-    private func untiledWindowFills(_ screen: NSScreen) -> Bool {
+    /// The frontmost window on `screen` was made to fill it by its app (title bar double
+    /// click), whether the strip holds it or not, and Oz didn't notice: it covers the strip,
+    /// so a swipe would only move windows nobody can see. Oz's own placements never reach
+    /// the screen's edges (outer gap), so they don't count.
+    private func appFilledScreen(_ screen: NSScreen) -> Bool {
         let area = Geometry.ax(screen.visibleFrame)
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]] ?? []
@@ -2949,8 +2950,11 @@ final class WindowManager {
             CGRectMakeWithDictionaryRepresentation(b as! CFDictionary, &r)
             guard r.intersects(area) else { continue }
             // Only the frontmost window on this screen counts.
-            guard let wid = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value, windows[wid] == nil else { return false }
-            return r.width >= area.width - 4 && r.height >= area.height - 4
+            guard r.width >= area.width - 4 && r.height >= area.height - 4,
+                  let wid = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value else { return false }
+            if let placed = windows[wid]?.lastFrame, placed.approxEqual(r) { return false }
+            Log.debug("swipe ignored: \(info[kCGWindowOwnerName as String] ?? "?") fills the screen")
+            return true
         }
         return false
     }
