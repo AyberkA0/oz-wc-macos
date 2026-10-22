@@ -1,17 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="22" viewBox="0 0 1200 22">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffe8a1"/><stop offset="1" stop-color="#f2bd3a"/>
-    </linearGradient>
-    <pattern id="b" width="36" height="22" patternUnits="userSpaceOnUse">
-      <rect width="36" height="22" fill="url(#g)"/>
-      <path d="M0 0.75H36M0 11H36M0 21.25H36M9 0V11M27 11V22" stroke="#c48a25" stroke-width="1.5" fill="none" opacity="0.8"/>
-    </pattern>
-    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="0.12" stop-color="#fff" stop-opacity="1"/>
-      <stop offset="0.88" stop-color="#fff" stop-opacity="1"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
-    </linearGradient>
-    <mask id="m"><rect width="1200" height="22" fill="url(#fade)"/></mask>
-  </defs>
-  <rect width="1200" height="22" rx="11" fill="url(#b)" mask="url(#m)"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="24" viewBox="0 0 1200 24">
+  <style>
+    :root { --line: #d1d9e0; --win: #f6f8fa; --accent: #9a6700; --accent-win: #fff8c5; }
+    @media (prefers-color-scheme: dark) {
+      :root { --line: #3d444d; --win: #151b23; --accent: #d29922; --accent-win: #2a2211; }
+    }
+    .rule { stroke: var(--line); stroke-width: 1; }
+    .win { fill: var(--win); stroke: var(--line); stroke-width: 1; }
+    .focus { fill: var(--accent-win); stroke: var(--accent); stroke-width: 1.2; }
+  </style>
+  <!-- A line across, with a small strip of three windows in the middle (as in the banner). -->
+  <path class="rule" d="M0 12.5 H584 M616 12.5 H1200"/>
+  <rect class="win" x="590.5" y="2.5" width="19" height="5" rx="1.5"/>
+  <rect class="focus" x="590.5" y="9.5" width="19" height="5" rx="1.5"/>
+  <rect class="win" x="590.5" y="16.5" width="19" height="5" rx="1.5"/>
 </svg>
