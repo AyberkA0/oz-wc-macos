@@ -1270,6 +1270,8 @@ final class WindowManager {
 
     private func appActivated(_ pid: pid_t) {
         guard enabled else { return }
+        // A window picked in the overview: it is closing.
+        if overviewActive { overviewClosing() }
         writer.perform(pid: pid) { [weak self] in
             guard let el = AX.element(AXUIElementCreateApplication(pid), kAXFocusedWindowAttribute) else { return }
             DispatchQueue.main.async { self?.focusChanged(el) }
@@ -2926,6 +2928,8 @@ final class WindowManager {
     private func openOverview(_ open: @escaping () -> Void) {
         guard enabled, !overviewActive, !SystemActions.isOverviewShowing else {
             open()
+            // Ours and up: this closes it.
+            if overviewActive { overviewClosing() }
             return
         }
         overviewActive = true
@@ -2980,15 +2984,29 @@ final class WindowManager {
         }
     }
 
-    /// Slides every window from where the overview left it back into the strip.
+    /// The overview is going (closed with a double tap, or a window picked in it): put the
+    /// windows back as soon as its closing animation is over (~0.2 s) rather than when its
+    /// window goes, half a second later, the windows standing in a pile meanwhile.
+    private func overviewClosing() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.closeOverview() }
+    }
+
+    /// Puts every window from where the overview left it straight back into the strip, the
+    /// one picked in the overview in view: each moves once. (Sliding them back meant taking a
+    /// fresh picture of each and slow apps answering late: windows landed one by one, at 10 fps.)
     private func closeOverview() {
+        guard overviewActive else { return }
         overviewActive = false
-        for (key, _) in visibleKeys() {
+        let focused = systemFocusedWindowID()
+        for (key, screen) in visibleKeys() {
             guard let strip = strips[key] else { continue }
-            var from: [CGWindowID: CGRect] = [:]
-            for id in strip.windowIDs { if let w = windows[id], !w.parked, let f = w.lastFrame { from[id] = f } }
-            if settings.animationDuration > 0, !from.isEmpty { pendingFrom[key] = from }
-            relayout(key, animated: true)
+            if let id = focused, strip.contains(id) {
+                let vh = viewport(screen).height
+                strip.scrollY = strip.clampScroll(strip.scrollToReveal(id, viewportHeight: vh, gap: settings.gap),
+                                                  viewportHeight: vh, gap: settings.gap)
+                strip.focused = id
+            }
+            relayout(key, animated: false)
         }
     }
 
