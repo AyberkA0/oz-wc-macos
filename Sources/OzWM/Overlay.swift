@@ -372,8 +372,13 @@ final class OverlayManager {
         var unchangedFrames = 0
         /// Row size the stand-in represents (the window may be taller if the app refused).
         var expectedSize = CGSize.zero
-        /// How much of the window is cut off at the bottom (scroll area above the screen bottom).
-        var bottomCut: CGFloat = 0
+        /// Where the whole window lies in the overlay window (its own coordinates, y up): the
+        /// part outside the overlay's bounds is cut off, the margin around it holds the shadow.
+        var contentFrame = CGRect.zero
+        /// The window's shadow, drawn by us while moving (see `show`): a wide soft one and a
+        /// thin one along the edge, like the system's.
+        let keyShadow = CALayer()
+        let edgeShadow = CALayer()
         /// Drawn and clickable. A hidden overlay stays ordered in, transparent and click-through:
         /// taking a window off screen (`orderOut`) and back is a window-server round trip that
         /// stalled the main thread for up to half a second, many times per swipe.
@@ -404,6 +409,16 @@ final class OverlayManager {
             view.layer?.masksToBounds = true
             imageLayer.contentsGravity = .resize
             imageLayer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
+            for (layer, opacity, radius, offset) in [(keyShadow, Float(0.32), CGFloat(16), CGFloat(-8)),
+                                                     (edgeShadow, Float(0.35), CGFloat(0.75), CGFloat(0))] {
+                layer.shadowColor = NSColor.black.cgColor
+                layer.shadowOpacity = opacity
+                layer.shadowRadius = radius
+                layer.shadowOffset = CGSize(width: 0, height: offset)
+                layer.isHidden = true
+                layer.actions = ["bounds": NSNull(), "position": NSNull(), "shadowPath": NSNull(), "hidden": NSNull()]
+                view.layer?.addSublayer(layer)
+            }
             view.layer?.addSublayer(imageLayer)
             window.contentView = view
         }
@@ -416,11 +431,14 @@ final class OverlayManager {
     /// and below `clipBottom`. Also used as a stand-in for a whole window (a slow app's window
     /// while scrolling): then `full` lies between the two and nothing is cut off.
     /// `stream`: keep it live (if live peeks are on); stand-ins during a scroll don't.
-    /// `shadow`: drawn with a window shadow like the real one.
+    /// `shadow`: drawn with a window shadow like the real one. `clickable`: it takes clicks
+    /// (a peek at rest). Otherwise (anything moving) the shadow is drawn in a margin around
+    /// the picture, so it moves with it in the same frame and never has to be worked out
+    /// again: the system's shadow is, on every size change, a frame or more late (flicker).
     /// `below`: a window being dragged, which must stay on top of the stand-ins.
     func show(_ id: CGWindowID, image: CGImage, full: CGRect, clipTop: CGFloat,
               clipBottom: CGFloat = .greatestFiniteMagnitude, trueColor: Bool = false,
-              stream: Bool = true, shadow: Bool = false, below: CGWindowID? = nil) {
+              stream: Bool = true, shadow: Bool = false, clickable: Bool = true, below: CGWindowID? = nil) {
         if let o = overlays[id], o.fading {
             // Shown again while fading out: replace the running fade, or it would carry on to
             // zero and leave the stand-in invisible over a parked window (the window "vanished").
@@ -444,11 +462,7 @@ final class OverlayManager {
             (o.window.contentView as? PeekView)?.onClick = { [weak self] in self?.onClick?(id) }
             overlays[id] = o
         }
-        let nsY = Geometry.primaryHeight - bottom
-        let frame = NSRect(x: full.minX, y: nsY, width: full.width, height: visibleHeight)
-
         o.expectedSize = full.size
-        o.bottomCut = full.maxY - bottom
         if trueColor && o.reference == nil { o.reference = image }
         if live && stream && o.mirror == nil && !o.mirrorIdle { startMirror(o, id: id) }
 
@@ -460,27 +474,29 @@ final class OverlayManager {
             o.shadowStale = true
         }
         o.imageLayer.contentsScale = o.window.backingScaleFactor
-        OverlayManager.layoutImage(o, in: full.size)
+        let ownShadow = shadow && !clickable
+        let resized = place(o, full: full, top: top, bottom: bottom, clipTop: clipTop, clipBottom: clipBottom,
+                            margin: ownShadow ? Self.shadowMargin : 0)
+        o.keyShadow.isHidden = !ownShadow
+        o.edgeShadow.isHidden = !ownShadow
         CATransaction.commit()
 
-        // Layer-backed content: no need to force a synchronous redraw every frame.
-        let resized = o.window.frame.size != frame.size
-        o.window.setFrame(frame, display: false)
-        if o.window.hasShadow != shadow {
-            o.window.hasShadow = shadow
+        // At rest the system draws the shadow: its size doesn't change there, so it is
+        // worked out once (again when the picture or size changes: worked out while the
+        // stand-in was still empty, it would stay missing).
+        let systemShadow = shadow && clickable
+        if o.window.hasShadow != systemShadow {
+            o.window.hasShadow = systemShadow
             o.shadowStale = true
         }
-        // The window server works the shadow out from the content once and keeps it: worked
-        // out while the stand-in was still empty, or before it changed shape, it would stay
-        // missing or wrong. A move alone keeps it.
-        if shadow && (resized || o.shadowStale) {
+        if systemShadow && (resized || o.shadowStale) {
             o.shadowStale = false
             o.window.invalidateShadow()
         }
+        if o.window.ignoresMouseEvents == clickable { o.window.ignoresMouseEvents = !clickable }
         if !o.shown {
             o.shown = true
             o.window.alphaValue = 1
-            o.window.ignoresMouseEvents = false
             // Over the windows that came forward while it was hidden, but under a dragged one.
             if let below {
                 o.window.order(.below, relativeTo: Int(below))
@@ -520,7 +536,7 @@ final class OverlayManager {
             CATransaction.setDisableActions(true)
             o.imageLayer.contents = image
             o.image = image
-            OverlayManager.layoutImage(o, in: o.expectedSize)
+            OverlayManager.layoutImage(o)
             CATransaction.commit()
             o.isLive = true
         }
@@ -532,12 +548,47 @@ final class OverlayManager {
     /// a picture of the right size fits exactly; one taken at another size (a stale stand-in,
     /// a window taller than asked) is cropped rather than shrunk, so there are never gaps
     /// around it or tiny text.
-    private static func layoutImage(_ o: Overlay, in row: CGSize) {
+    private static func layoutImage(_ o: Overlay) {
         guard let image = o.image, image.width > 0, image.height > 0 else { return }
+        let row = o.contentFrame
         let iw = CGFloat(image.width), ih = CGFloat(image.height)
         let scale = max(row.width / iw, row.height / ih)
         let w = (iw * scale).rounded(), h = (ih * scale).rounded()
-        o.imageLayer.frame = CGRect(x: 0, y: row.height - h - o.bottomCut, width: w, height: h)
+        o.imageLayer.frame = CGRect(x: row.minX, y: row.maxY - h, width: w, height: h)
+    }
+
+    /// Room around a stand-in for the shadow it draws itself.
+    private static let shadowMargin: CGFloat = 48
+    /// Corner radius of macOS windows (measured), for the shape of that shadow.
+    private static let cornerRadius: CGFloat = 18
+
+    /// Puts the overlay window over the visible part (`top`...`bottom`) of a window at `full`
+    /// (AX coordinates), with `margin` around it on the sides that aren't cut off, within the
+    /// clip; lays the picture and shadows out inside. In a Core Animation transaction. True if
+    /// the overlay window changed size.
+    @discardableResult
+    private func place(_ o: Overlay, full: CGRect, top: CGFloat, bottom: CGFloat,
+                       clipTop: CGFloat = -.greatestFiniteMagnitude, clipBottom: CGFloat = .greatestFiniteMagnitude,
+                       margin m: CGFloat) -> Bool {
+        let winTop = top > full.minY + 0.5 ? top : max(full.minY - m, clipTop)
+        let winBottom = bottom < full.maxY - 0.5 ? bottom : min(full.maxY + m, clipBottom)
+        let frame = NSRect(x: full.minX - m, y: Geometry.primaryHeight - winBottom,
+                           width: full.width + 2 * m, height: winBottom - winTop)
+        let content = CGRect(x: m, y: winBottom - full.maxY, width: full.width, height: full.height)
+        if content.size != o.contentFrame.size {
+            let path = CGPath(roundedRect: CGRect(origin: .zero, size: content.size),
+                              cornerWidth: Self.cornerRadius, cornerHeight: Self.cornerRadius, transform: nil)
+            o.keyShadow.shadowPath = path
+            o.edgeShadow.shadowPath = path
+        }
+        o.contentFrame = content
+        o.keyShadow.frame = content
+        o.edgeShadow.frame = content
+        OverlayManager.layoutImage(o)
+        // Layer-backed content: no need to force a synchronous redraw every frame.
+        let resized = o.window.frame.size != frame.size
+        o.window.setFrame(frame, display: false)
+        return resized
     }
 
     /// Stops every live stream but keeps the stand-ins (with their last frame) in place, e.g.
@@ -580,13 +631,11 @@ final class OverlayManager {
     func handoff(_ id: CGWindowID, to frame: CGRect, delay: TimeInterval = 0.12) {
         guard let o = overlays[id], o.shown else { return }
         o.expectedSize = frame.size
-        o.bottomCut = 0
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        OverlayManager.layoutImage(o, in: frame.size)
+        place(o, full: frame, top: frame.minY, bottom: frame.maxY, margin: o.keyShadow.isHidden ? 0 : Self.shadowMargin)
         CATransaction.commit()
-        o.window.setFrame(NSRect(x: frame.minX, y: Geometry.primaryHeight - frame.maxY,
-                                 width: frame.width, height: frame.height), display: true)
+        o.window.display()
         guard pendingHide[id] == nil else { return }
         let item = DispatchWorkItem { [weak self] in self?.fadeOut(id) }
         pendingHide[id] = item

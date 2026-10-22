@@ -2355,7 +2355,8 @@ final class WindowManager {
                 let wasShowing = overlays.isShowing(w.id)
                 if !wasShowing { Log.debug("overlay on \(w.id) \(w.appName)") }
                 overlays.show(w.id, image: image, full: full, clipTop: hardTop, clipBottom: clipBottom,
-                              trueColor: snapshots.isOnScreenCapture(w.id), shadow: true, below: dragging)
+                              trueColor: snapshots.isOnScreenCapture(w.id), shadow: true, clickable: !isMoving,
+                              below: dragging)
                 // Park it (at its full row size, so the live mirror isn't squashed) only once
                 // the stand-in is on screen: a fresh overlay needs a frame or two to appear.
                 if w.parked || pendingParks[w.id] != nil {
@@ -2474,7 +2475,8 @@ final class WindowManager {
                 guard isSlow(w), !w.shrunk,
                       let image = snapshots.image(w.id, size: r.size) ?? overlays.currentImage(w.id) else { return false }
                 overlays.show(w.id, image: image, full: r, clipTop: hardTop,
-                              trueColor: snapshots.isOnScreenCapture(w.id), stream: false, shadow: true, below: dragging)
+                              trueColor: snapshots.isOnScreenCapture(w.id), stream: false, shadow: true, clickable: false,
+                              below: dragging)
                 proxied.insert(w.id)
                 proxyShownAt[w.id] = CACurrentMediaTime()
                 pendingParks.removeValue(forKey: w.id)?.cancel()
@@ -2484,7 +2486,8 @@ final class WindowManager {
             }
             // A fresh capture (requested as the motion started) replaces the warm-up picture.
             guard let image = snapshots.image(w.id, size: r.size) ?? overlays.currentImage(w.id) else { return false }
-            overlays.show(w.id, image: image, full: r, clipTop: hardTop, stream: false, shadow: true, below: dragging)
+            overlays.show(w.id, image: image, full: r, clipTop: hardTop, stream: false, shadow: true, clickable: false,
+                          below: dragging)
             if !w.parked {
                 if CACurrentMediaTime() - (proxyShownAt[w.id] ?? 0) >= Self.standInSettle {
                     park(w, screen: screen, size: r.size)
