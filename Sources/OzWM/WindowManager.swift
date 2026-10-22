@@ -119,7 +119,7 @@ final class WindowManager {
     /// Windows waiting for their stand-in to reach the screen before being moved away.
     private var pendingParks: [CGWindowID: DispatchWorkItem] = [:]
 
-    private struct GestureState { let key: StripKey; let strip: Strip; let screen: NSScreen }
+    private struct GestureState { let key: StripKey; let strip: Strip; let screen: NSScreen; let startScroll: CGFloat }
     private var gesture: GestureState?
 
     /// The window the user is resizing with the mouse right now; its neighbours reflow live.
@@ -1967,7 +1967,7 @@ final class WindowManager {
             pendingActivation[key] = nil
             pinned.subtract(strip.windowIDs)
             strip.scrollY = strip.renderScrollY
-            gesture = GestureState(key: key, strip: strip, screen: screen)
+            gesture = GestureState(key: key, strip: strip, screen: screen, startScroll: strip.scrollY)
             overlays.wake()
             prepareProxies(strip)
             Log.debug("swipe began")
@@ -1997,7 +1997,8 @@ final class WindowManager {
             let target: CGFloat
             switch settings.swipe.snap {
             case .always:
-                target = g.strip.snapTarget(from: s, velocity: velocity, viewportHeight: vh, gap: settings.gap)
+                target = g.strip.snapTarget(from: s, velocity: velocity, start: g.startScroll, viewportHeight: vh,
+                                            gap: settings.gap, momentum: CGFloat(settings.swipe.momentum))
             case .near, .off:
                 target = g.strip.restingScroll(from: s, velocity: velocity, viewportHeight: vh, gap: settings.gap,
                                                snapDistance: settings.swipe.snap == .near ? settings.swipe.snapDistance : 0,

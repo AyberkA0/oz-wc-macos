@@ -461,27 +461,42 @@ public final class Strip {
     }
 
     /// Where a swipe released at `s` with `velocity` (points/s, positive = scrolling down)
-    /// should land: where the glide would stop, moved just enough that the window cut off at
-    /// an edge comes fully in, its top on the top edge or its bottom on the bottom edge.
-    /// With windows cut at both edges the swipe's direction picks (down: the one below),
-    /// released still the nearer one. A window taller than the screen can't come fully in
-    /// and isn't pulled to.
-    public func snapTarget(from s: CGFloat, velocity: CGFloat, viewportHeight vh: CGFloat, gap: CGFloat) -> CGFloat {
-        let p = clampScroll(s + velocity * 0.2, viewportHeight: vh, gap: gap).rounded()
-        var up: CGFloat?, down: CGFloat?
-        for i in rows.indices where rows[i].height <= vh + 1 {
+    /// should land when every swipe settles on whole windows. `start`: where the swipe began.
+    ///
+    /// The glide's end is moved so the window cut off at the leading edge (the bottom when
+    /// going down) comes fully in: its bottom on the bottom edge. Only the trailing edge cut:
+    /// the shorter way to clear it, back (its top on the top edge) or on (the next row's top
+    /// there). Fingers slow down before they lift, so a slow release still goes the way the
+    /// swipe went; only a nudge (under `nudge` points) falls back to the nearest. A window
+    /// taller than the screen can't come fully in and isn't pulled to.
+    public func snapTarget(from s: CGFloat, velocity: CGFloat, start: CGFloat? = nil, viewportHeight vh: CGFloat,
+                           gap: CGFloat, momentum: CGFloat = 1, nudge: CGFloat = 30) -> CGFloat {
+        let p = clampScroll(s + velocity * 0.25 * momentum, viewportHeight: vh, gap: gap).rounded()
+        let moved = p - (start ?? s)
+        // +1 down, -1 up, 0 undecided.
+        let dir: CGFloat = abs(velocity) >= vh * 0.1 ? (velocity > 0 ? 1 : -1) : (abs(moved) >= nudge ? (moved > 0 ? 1 : -1) : 0)
+        // At p: the window cut by the top edge (its top, its bottom) and by the bottom edge.
+        var topCut: (top: CGFloat, bottom: CGFloat)?, bottomCut: (top: CGFloat, bottom: CGFloat)?
+        for i in rows.indices {
             let top = rowTop(i, gap: gap), bottom = top + rows[i].height
-            if top < p - 1 && bottom > p + 1 { up = top }
-            if top < p + vh - 1 && bottom > p + vh + 1 { down = bottom - vh }
+            // A window covering the whole screen: anywhere on it is fine.
+            if top <= p + 1 && bottom >= p + vh - 1 && rows[i].height > vh + 1 { return p }
+            guard rows[i].height <= vh + 1 else { continue }
+            if top < p - 1 && bottom > p + 1 { topCut = (top, bottom) }
+            if top < p + vh - 1 && bottom > p + vh + 1 { bottomCut = (top, bottom) }
         }
+        let back = topCut.map { $0.top }                  // its top on the top edge
+        let past = topCut.map { $0.bottom + gap }         // the next row's top on the top edge
+        let down = bottomCut.map { $0.bottom - vh }       // its bottom on the bottom edge
+        let before = bottomCut.map { $0.top - gap - vh }  // the row above's bottom on the bottom edge
+        func nearest(_ c: [CGFloat?]) -> CGFloat? { c.compactMap { $0 }.min { abs($0 - p) < abs($1 - p) } }
         let target: CGFloat
-        switch (up, down) {
-        case let (u?, d?):
-            let still = abs(velocity) < vh * 0.1
-            target = still ? (p - u <= d - p ? u : d) : (velocity > 0 ? d : u)
-        case let (u?, nil): target = u
-        case let (nil, d?): target = d
-        default: target = p
+        if dir > 0 {
+            target = down ?? nearest([back, past]) ?? p
+        } else if dir < 0 {
+            target = back ?? nearest([down, before]) ?? p
+        } else {
+            target = nearest([back, down]) ?? p
         }
         return clampScroll(target, viewportHeight: vh, gap: gap)
     }

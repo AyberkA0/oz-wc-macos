@@ -223,12 +223,16 @@ final class StripTests: XCTestCase {
     func testMagneticSnapBringsCutWindowsIn() {
         // Rows at 0-495, 505-1000, 1010-1505, 1515-2010; screen 1000 tall, max scroll 1010.
         let s = makeStrip([495, 495, 495, 495])
-        // At 300 row 0 is cut at the top (0) and row 2 at the bottom (1505 - 1000 = 505).
-        // Still: the nearer one; moving: the side it moves towards.
+        // At 300 row 0 is cut at the top (back: 0) and row 2 at the bottom (down: 505).
+        // A nudge: the nearer one.
         XCTAssertEqual(s.snapTarget(from: 300, velocity: 0, viewportHeight: vh, gap: 10), 505)
         XCTAssertEqual(s.snapTarget(from: 200, velocity: 0, viewportHeight: vh, gap: 10), 0)
+        // Released fast: the way it moves.
         XCTAssertEqual(s.snapTarget(from: 200, velocity: 200, viewportHeight: vh, gap: 10), 505)
         XCTAssertEqual(s.snapTarget(from: 400, velocity: -200, viewportHeight: vh, gap: 10), 0)
+        // Released slowly after a long swipe: still the way the swipe went.
+        XCTAssertEqual(s.snapTarget(from: 200, velocity: 0, start: 0, viewportHeight: vh, gap: 10), 505)
+        XCTAssertEqual(s.snapTarget(from: 400, velocity: 0, start: 505, viewportHeight: vh, gap: 10), 0)
         // Nothing cut (both edges on whole windows): stays.
         XCTAssertEqual(s.snapTarget(from: 505, velocity: 0, viewportHeight: vh, gap: 10), 505)
         // Only the bottom one cut: its bottom goes to the bottom edge, not its top to the top.
@@ -237,6 +241,23 @@ final class StripTests: XCTestCase {
         // A window taller than the screen isn't pulled to.
         let tall = makeStrip([400, 1500, 400])
         XCTAssertEqual(tall.snapTarget(from: 900, velocity: 0, viewportHeight: vh, gap: 10), 900)
+    }
+
+    func testMagneticSnapNeverPullsBackAgainstTheSwipe() {
+        // Rows at 0-600, 610-1010, 1020-1620; max scroll 620.
+        let s = makeStrip([600, 400, 600])
+        // Going down, at 100: the top row is cut, the bottom edge (1100) cuts row 2 too.
+        XCTAssertEqual(s.snapTarget(from: 100, velocity: 0, start: 0, viewportHeight: vh, gap: 10), 620)
+        // Going down, at 40: the bottom edge (1040) cuts row 2 as well: the leading edge wins.
+        XCTAssertEqual(s.snapTarget(from: 40, velocity: 0, start: 0, viewportHeight: vh, gap: 10), 620)
+        // Only the trailing edge cut: clear it the short way, not back against the swipe.
+        let t = makeStrip([500, 300, 300, 600])  // 0-500, 510-810, 820-1120, 1130-1730
+        // At 450 going down: row 0 cut at the top (back 0, past 510); bottom edge 1450 is in
+        // row 3 (1130-1730), cut: leading wins -> 1730 - 1000 = 730.
+        XCTAssertEqual(t.snapTarget(from: 450, velocity: 0, start: 0, viewportHeight: vh, gap: 10), 730)
+        // At 120 going down: the bottom edge is on row 2's bottom (not cut), only row 0 is
+        // cut at the top: back (0) is 120 away, past (510) 390, so back.
+        XCTAssertEqual(t.snapTarget(from: 120, velocity: 0, start: 0, viewportHeight: vh, gap: 10), 0)
     }
 
     func testFreeScrollSnapsOnlyNearEdges() {
