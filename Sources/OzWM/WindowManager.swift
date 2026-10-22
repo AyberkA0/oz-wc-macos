@@ -1992,14 +1992,24 @@ final class WindowManager {
     // MARK: Gestures
 
     func handleGesture(_ e: GestureEvent) {
-        guard enabled, !overviewActive else { return }
+        guard enabled, !overviewActive else {
+            if case .swipeBegan = e { Log.info("swipe ignored: \(enabled ? "overview still open" : "Oz off")") }
+            return
+        }
         switch e {
         case .swipeBegan:
             guard settings.swipe.enabled, let screen = Geometry.screenUnderMouse() else { return }
             let key = visibleKey(for: screen)
             // A window fills the screen: there is nothing to scroll into view.
-            guard let strip = strips[key], !strip.isEmpty, maximizedID(key) == nil,
-                  !appFilledScreen(screen) else { return }
+            guard let strip = strips[key], !strip.isEmpty else {
+                Log.info("swipe ignored: no tiled windows on this desktop")
+                return
+            }
+            guard maximizedID(key) == nil else {
+                Log.info("swipe ignored: a window is maximized")
+                return
+            }
+            guard !appFilledScreen(screen) else { return }
             stopAnimation(key)
             pendingActivation[key] = nil
             pinned.subtract(strip.windowIDs)
@@ -3034,7 +3044,7 @@ final class WindowManager {
             guard r.intersects(area) else { continue }
             // Only the frontmost window on this screen counts.
             guard r.width >= area.width - 4 && r.height >= area.height - 4 else { return false }
-            Log.debug("swipe ignored: \(info[kCGWindowOwnerName as String] ?? "?") fills the screen")
+            Log.info("swipe ignored: \(info[kCGWindowOwnerName as String] ?? "?") fills the screen")
             return true
         }
         return false

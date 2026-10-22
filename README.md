@@ -230,7 +230,7 @@ oz.on("windowCreated", function (w) { oz.log("new:", w.app, w.title); });
 oz.set({ doubleTap: { action: function () { oz.appExpose(); } } });
 ```
 
-**Pass-through apps.** While an app in `passThroughApps` is in front, Oz lets go of all of its shortcuts and swipes so they reach that app; the double tap keeps working. The default list covers Moonlight (so its ⌃⌥⇧Q disconnect works), Parsec, Microsoft Remote Desktop, Screen Sharing, VNC Viewer, Jump Desktop, TeamViewer, AnyDesk and GeForce NOW. Entries are bundle ids or app names: `oz.set({ passThroughApps: ["com.moonlight-stream.Moonlight", "UTM"] })`.
+**Pass-through apps.** While an app in `passThroughApps` is in front, Oz lets go of all of its shortcuts, and of the swipes made over that app's window, so they reach it; swipes over the strip still scroll it, and the double tap keeps working. The default list covers Moonlight (so its ⌃⌥⇧Q disconnect works), Parsec, Microsoft Remote Desktop, Screen Sharing, VNC Viewer, Jump Desktop, TeamViewer, AnyDesk and GeForce NOW. Entries are bundle ids or app names: `oz.set({ passThroughApps: ["com.moonlight-stream.Moonlight", "UTM"] })`.
 
 **`oz` API:** `set`, `settings()`, `bind`, `rule`, `on` (events: `windowCreated`, `windowFocused`, `windowFloated`, `swipeEnded`, `spaceChanged`, `spaceTilingChanged`, `configLoaded`), `command(name, arg)`, one function per command (`oz.focusDown()`, `oz.setHeight(0.5)`, …), `windows()`, `focusedWindow()`, `exec(cmd)` (runs in the background), `shell(cmd)` (returns the output), `notify(title, text)`, `log(...)`.
 

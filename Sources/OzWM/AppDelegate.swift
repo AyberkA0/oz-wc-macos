@@ -84,11 +84,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         started = true
 
         gestures.handler = { [unowned self] e in
-            if case .doubleTap = e {
+            switch e {
+            case .doubleTap:
                 // Still works over a pass-through app: it goes to the Dock, not to the app.
                 runDoubleTap()
-            } else if !HotkeyCenter.shared.suspended {
-                wm.handleGesture(e)
+            case .swipeBegan:
+                // A pass-through app in front gets the swipes made over its own window; over
+                // the strip (its window off to the side, say) they still scroll it.
+                swipeToApp = HotkeyCenter.shared.suspended && frontAppUnderMouse()
+                if swipeToApp {
+                    Log.info("swipe ignored: passed through to the app in front")
+                } else {
+                    wm.handleGesture(e)
+                }
+            default:
+                if !swipeToApp { wm.handleGesture(e) }
             }
         }
         gestures.start()
@@ -114,7 +124,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.offerTrackpadSetup() }
     }
 
-    /// A pass-through app in front (Moonlight, a remote desktop) gets every key and gesture.
+    /// The swipe going on was made over a pass-through app's window, and is left to it.
+    private var swipeToApp = false
+
+    /// The window under the mouse belongs to the frontmost app.
+    private func frontAppUnderMouse() -> Bool {
+        guard let front = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return false }
+        let m = NSEvent.mouseLocation
+        let p = CGPoint(x: m.x, y: Geometry.primaryHeight - m.y)
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] ?? []
+        for info in list {
+            guard (info[kCGWindowLayer as String] as? Int) == 0, let b = info[kCGWindowBounds as String] else { continue }
+            var r = CGRect.zero
+            CGRectMakeWithDictionaryRepresentation(b as! CFDictionary, &r)
+            if r.contains(p) { return (info[kCGWindowOwnerPID as String] as? pid_t) == front }
+        }
+        return false
+    }
+
+    /// A pass-through app in front (Moonlight, a remote desktop) gets every key, and the
+    /// swipes made over its window.
     private func updatePassThrough() {
         let app = NSWorkspace.shared.frontmostApplication
         let pass = wm.settings.passesThrough(bundleID: app?.bundleIdentifier, name: app?.localizedName)
