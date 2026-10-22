@@ -165,7 +165,7 @@ final class WindowManager {
         var spring: Spring?
 
         struct Spring {
-            static let damping = 0.6                // 1 = no swing past, lower = more
+            static let damping = 0.7                // 1 = no swing past, lower = more
             static let omega = 2 * Double.pi / 0.45 // natural period 0.45 s
             let a: Double, b: Double, decay: Double, freq: Double
             /// Offset from the target `x0` with velocity `v0` (both points / points per s).
@@ -2058,14 +2058,14 @@ final class WindowManager {
             }
             // Magnetic: it carries on at the finger's speed into a spring on the next window,
             // so it swings past and settles like something with weight. The speed is held to
-            // 1.5-3x the way from where the swipe began, so the swing grows with the way
-            // (about 4-8% of it) whether the finger lifted slowly or threw it.
+            // 1.5-2.5x the way from where the swipe began, so the swing grows with the way
+            // (about 2-4% of it) whether the finger lifted slowly or threw it.
             var spring: Animation.Spring?
             if settings.swipe.snap == .always {
                 let travel = target - g.startScroll
                 if abs(travel) >= 1 {
                     let toward = travel > 0 ? max(velocity, 0) : max(-velocity, 0)
-                    let speed = min(max(toward, abs(travel) * 1.5), abs(travel) * 3)
+                    let speed = min(max(toward, abs(travel) * 1.5), abs(travel) * 2.5)
                     let sp = Animation.Spring(x0: Double(s - target), v0: Double(travel > 0 ? speed : -speed))
                     spring = sp
                     duration = sp.duration
