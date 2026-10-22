@@ -133,7 +133,7 @@ By default the strip spans the whole screen. A **scroll area** limits it to part
 
 Choose menu bar › *Set Scroll Area…* (or `⌃⌥⇧ a`). The editor hides your windows behind the desktop picture and dims everything outside the selected area. Resize the area by its edges and corners, drag it to move it, draw a new one, or use a preset (left or right half, left or right two thirds, full screen). Return saves, Esc cancels. Windows in the strip are then clipped at the scroll area's top and bottom edges in the same way they slide off the top of the screen. Each desktop has its own scroll area, remembered across restarts; *Reset Scroll Area* returns to the full screen.
 
-<p align="center"><img src="docs/media/zone.svg" alt="The scroll area editor" width="720"></p>
+<p align="center"><img src="docs/media/zone.gif" alt="The scroll area editor" width="720"></p>
 
 ### Split lines
 
@@ -267,4 +267,4 @@ build/Oz.app/Contents/MacOS/OzWM msg setHeight 0.5
 - Mission Control opened without Oz (four-finger swipe or the Mission Control key) shows off-screen windows at a small size.
 - The log is at `~/Library/Logs/OzWM.log` (`debug: true` for verbose output). Main-thread delays are logged as `[stall]` with the code responsible, and slow applications as `[slow]`.
 
-<p align="center"><sub>The animations were recorded with demo mode (⌃⌥⇧O). The scroll area editor and tab tear-off are still placeholders: to add one, place a <code>.gif</code> with the same name next to the corresponding file in <code>docs/media/</code> and update the image path above.</sub></p>
+<p align="center"><sub>The animations were recorded with demo mode (⌃⌥⇧O). Tab tear-off is still a placeholder: to add an animation, place a <code>.gif</code> with the same name next to the corresponding file in <code>docs/media/</code> and update the image path above.</sub></p>
