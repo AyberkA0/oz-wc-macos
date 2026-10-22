@@ -158,7 +158,7 @@ With a scroll area set, the remaining screen space holds windows that do not scr
 While you drag, a pane of glass (clear Liquid Glass on macOS 26 and later, refracting what is behind it; frosted glass on earlier versions) previews where the window will land: its slot in a region, or the scroll area itself when it would join the strip.
 
 <p align="center"><img src="docs/media/regions.gif" alt="Windows tiled in the regions around the scroll area" width="720"></p>
-<p align="center"><img src="docs/media/tear-off.svg" alt="Tearing a tab off into a region" width="720"></p>
+<p align="center"><img src="docs/media/tear-off.gif" alt="Dragging two windows out of the scroll area: the second one splits the region with the first" width="720"></p>
 
 <p align="center"><img src="docs/media/road.svg" alt="" width="100%"></p>
 
@@ -267,4 +267,4 @@ build/Oz.app/Contents/MacOS/OzWM msg setHeight 0.5
 - Mission Control opened without Oz (four-finger swipe or the Mission Control key) shows off-screen windows at a small size.
 - The log is at `~/Library/Logs/OzWM.log` (`debug: true` for verbose output). Main-thread delays are logged as `[stall]` with the code responsible, and slow applications as `[slow]`.
 
-<p align="center"><sub>The animations were recorded with demo mode (⌃⌥⇧O). Tab tear-off is still a placeholder: to add an animation, place a <code>.gif</code> with the same name next to the corresponding file in <code>docs/media/</code> and update the image path above.</sub></p>
+<p align="center"><sub>The animations were recorded with demo mode (⌃⌥⇧O).</sub></p>
