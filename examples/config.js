@@ -55,6 +55,7 @@ oz.set({
     "com.teamviewer.TeamViewer", "com.anydesk.anydeskmacos", "com.nvidia.gfnpc.mall",
   ],
 
+  demoMode: false,               // ctrl+alt+shift+o opens Wizard of Oz demo windows (also in Settings)
   debug: false,                  // verbose log
 });
 

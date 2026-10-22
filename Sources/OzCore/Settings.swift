@@ -75,6 +75,8 @@ public struct Settings {
         "com.apple.ScreenSharing", "com.realvnc.vncviewer", "com.p5sys.jump.mac.viewer",
         "com.teamviewer.TeamViewer", "com.anydesk.anydeskmacos", "com.nvidia.gfnpc.mall",
     ]
+    /// Demo mode: a shortcut (ctrl+alt+shift+o) opens stand-in Wizard of Oz windows.
+    public var demoMode = false
     public var debug = false
 
     public init() {}
@@ -111,6 +113,7 @@ public struct Settings {
         if let v = j["smoothScroll"] as? Bool { smoothScroll = v }
         if let v = num(j["slowAppThreshold"]), v > 0 { slowAppThreshold = v }
         if let a = j["passThroughApps"] as? [Any] { passThroughApps = a.compactMap { $0 as? String } }
+        if let v = j["demoMode"] as? Bool { demoMode = v }
         if let v = j["debug"] as? Bool { debug = v }
 
         if let s = j["swipe"] as? [String: Any] {

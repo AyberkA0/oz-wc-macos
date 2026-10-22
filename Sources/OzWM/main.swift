@@ -14,6 +14,9 @@ case "msg":
         commandNotification, object: args[1],
         userInfo: args.count >= 3 ? ["arg": args[2]] : nil, deliverImmediately: true)
     exit(0)
+case "demo":
+    // The demo app: Wizard of Oz windows for demo mode, started by Oz itself.
+    Demo.runApp(firstTheme: args.count >= 2 ? Int(args[1]) ?? 0 : 0)
 case "--print-default-config":
     print(DefaultConfig.source)
     exit(0)

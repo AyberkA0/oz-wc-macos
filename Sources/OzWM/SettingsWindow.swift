@@ -143,6 +143,12 @@ private struct SettingsView: View {
                 }
                 .disabled(!model.s.doubleTap.enabled)
             }
+            Section("Demo") {
+                Toggle("Demo mode", isOn: model.binding(\.demoMode, ["demoMode"], json: { $0 }))
+                Text("⌃⌥⇧O opens a Wizard of Oz window to show Oz with. Turning it off closes them.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             Section {
                 Text("These settings apply on top of ~/.config/oz/config.js, which is left as it is. Shortcuts and window rules are set there.")
                     .font(.footnote)

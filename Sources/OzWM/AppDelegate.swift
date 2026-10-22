@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func shutdown() {
+        demo.closeAll()
         gestures.stop()
         if started {
             wm.saveLayout()
@@ -328,7 +329,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Log.debugEnabled = s.debug
         gestures.configure(s)
         if started { wm.settingsChanged(); updatePassThrough() }
+        updateDemo(s.demoMode)
         settingsWindow.refresh(s)
+    }
+
+    // MARK: Demo mode
+
+    private let demo = Demo.Launcher()
+    /// Removes the demo shortcut (a config reload drops it on its own: it is set again then).
+    private var removeDemoKey: (() -> Void)?
+    private static let demoKey = "ctrl+alt+shift+o"
+
+    private func updateDemo(_ on: Bool) {
+        removeDemoKey?()
+        removeDemoKey = nil
+        if on {
+            removeDemoKey = HotkeyCenter.shared.registerTemporary(Self.demoKey) { [weak self] in self?.demo.openWindow() }
+            if removeDemoKey == nil { Log.info("demo mode: \(Self.demoKey) is taken") }
+        } else {
+            demo.closeAll()
+        }
     }
 
     // MARK: Presets
