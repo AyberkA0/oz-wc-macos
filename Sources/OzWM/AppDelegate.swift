@@ -306,6 +306,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if wm.enabled { addPresetItems(to: menu) }
         }
         menu.addItem(.separator())
+        item("Start at Login", #selector(toggleStartAtLogin)).state = LoginItem.isEnabled ? .on : .off
         item("Settings…", #selector(openSettings), key: ",")
         item("Edit Config", #selector(editConfig))
         item("Reload Config", #selector(reloadConfig))
@@ -439,6 +440,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openSettings() {
         settingsWindow.show(current: wm.settings)
+    }
+
+    @objc private func toggleStartAtLogin() {
+        LoginItem.set(!LoginItem.isEnabled)
+        if LoginItem.needsApproval { LoginItem.openSystemSettings() }
+        settingsWindow.refresh(wm.settings)
     }
 
     @objc private func toggleTiling() { wm.setEnabled(!wm.enabled) }

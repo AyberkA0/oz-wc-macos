@@ -57,6 +57,22 @@ final class SettingsModel: ObservableObject {
 
     init(_ s: OzCore.Settings) { self.s = s }
 
+    /// Not a config setting: macOS keeps it (a login item), so it is read from there.
+    @Published var startAtLogin = LoginItem.isEnabled
+    @Published var loginNeedsApproval = LoginItem.needsApproval
+
+    var startAtLoginBinding: Binding<Bool> {
+        Binding(get: { self.startAtLogin }, set: { on in
+            LoginItem.set(on)
+            self.refreshLogin()
+        })
+    }
+
+    func refreshLogin() {
+        startAtLogin = LoginItem.isEnabled
+        loginNeedsApproval = LoginItem.needsApproval
+    }
+
     /// A binding that writes through to the overrides under `path` (`json` turns the value into
     /// what the config would hold).
     func binding<T>(_ kp: WritableKeyPath<OzCore.Settings, T>, _ path: [String], json: @escaping (T) -> Any) -> Binding<T> {
@@ -85,6 +101,18 @@ private struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section("General") {
+                Toggle("Start at login", isOn: model.startAtLoginBinding)
+                if model.loginNeedsApproval {
+                    HStack {
+                        Text("macOS wants Oz allowed as a login item.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Open Login Items…") { LoginItem.openSystemSettings() }
+                    }
+                }
+            }
             Section("Layout") {
                 slider("Gap between windows", model.number(\.gap, ["gap"]), 0...40, step: 1, unit: "pt")
                 slider("Zone margin", model.number(\.outerGap, ["outerGap"]), 0...40, step: 1, unit: "pt")
@@ -197,6 +225,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     func show(current: OzCore.Settings) {
         if let window, let model {
             model.s = current
+            model.refreshLogin()
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             return
@@ -224,6 +253,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     /// The settings now in effect (after a reset or a config reload) for the open window.
     func refresh(_ s: OzCore.Settings) {
         model?.s = s
+        model?.refreshLogin()
     }
 
     private func scheduleApply() {
