@@ -2032,6 +2032,17 @@ final class WindowManager {
     // MARK: Gestures
 
     func handleGesture(_ e: GestureEvent) {
+        if enabled, overviewActive, case .swipeBegan = e {
+            if SystemActions.isOverviewShowing {
+                // A swipe in Mission Control closes it, as macOS's own swipe would (the
+                // three-finger swipe is Oz's, so macOS doesn't any more): it did nothing before.
+                Log.info("swipe closes Mission Control")
+                openOverview(SystemActions.missionControl)
+                return
+            }
+            // Already gone (its window lingers a moment after it closes): carry on scrolling.
+            closeOverview()
+        }
         guard enabled, !overviewActive else {
             if case .swipeBegan = e { Log.info("swipe ignored: \(enabled ? "overview still open" : "Oz off")") }
             return
@@ -3101,7 +3112,9 @@ final class WindowManager {
             guard r.intersects(area) else { continue }
             // Only the frontmost window on this screen counts.
             guard r.width >= area.width - 4 && r.height >= area.height - 4 else { return false }
-            Log.info("swipe ignored: \(info[kCGWindowOwnerName as String] ?? "?") fills the screen")
+            let wid = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value ?? 0
+            let kind = windows[wid] != nil ? "in the strip" : floating[wid] != nil ? "in a region / floating" : "not Oz's"
+            Log.info("swipe ignored: \(info[kCGWindowOwnerName as String] ?? "?") fills the screen (\(Int(r.minX)),\(Int(r.minY)) \(Int(r.width))x\(Int(r.height)), \(kind))")
             return true
         }
         return false
