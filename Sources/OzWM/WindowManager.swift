@@ -127,6 +127,8 @@ final class WindowManager {
         /// How far the fingers have gone on the trackpad (trackpad heights, the way they went).
         var padTravel = 0.0
         let startTime = CACurrentMediaTime()
+        /// Where the fingers alone would have the strip (no stops), for the give at its ends.
+        var free: CGFloat
     }
     private var gesture: GestureState?
 
@@ -2060,7 +2062,8 @@ final class WindowManager {
                 let down = strip.snapTarget(from: s + far, velocity: far, start: s, viewportHeight: vh, gap: settings.gap)
                 range = min(up, s)...max(down, s)
             }
-            gesture = GestureState(key: key, strip: strip, screen: screen, startScroll: strip.scrollY, range: range)
+            gesture = GestureState(key: key, strip: strip, screen: screen, startScroll: strip.scrollY, range: range,
+                                   free: strip.scrollY)
             overlays.wake()
             prepareProxies(strip)
             Log.debug("swipe began")
@@ -2070,8 +2073,20 @@ final class WindowManager {
             gesture?.padTravel += dy
             let vh = viewport(g.screen).height
             let delta = CGFloat(dy * settings.swipe.sensitivity) * vh * (settings.swipe.natural ? 1 : -1)
-            // Hard stops: the strip's ends, or the next window for magnetic scrolling.
-            let s = min(max(g.strip.scrollY + delta, g.range.lowerBound), g.range.upperBound)
+            let free = g.free + delta
+            gesture?.free = free
+            // Stops: the next window for magnetic scrolling, hard; at the strip's ends there is
+            // nothing further, so it gives a little against the push (less the further you
+            // push, at most 8% of the screen) and springs back when you let go.
+            let maxS = g.strip.maxScroll(viewportHeight: vh, gap: settings.gap)
+            let give = vh * 0.08
+            func resisted(_ over: CGFloat) -> CGFloat { give * over / (over + give) }
+            var s = min(max(free, g.range.lowerBound), g.range.upperBound)
+            if free < 0 && g.range.lowerBound <= 0.5 {
+                s = -resisted(-free)
+            } else if free > maxS && g.range.upperBound >= maxS - 0.5 {
+                s = maxS + resisted(free - maxS)
+            }
             g.strip.scrollY = s
             g.strip.renderScrollY = s
             markDirty(g.key)
@@ -2120,6 +2135,10 @@ final class WindowManager {
                     spring = sp
                     duration = sp.duration
                 }
+            }
+            // Let go past an end: back at an easy pace, however fast the release.
+            if s < -0.5 || s > g.strip.maxScroll(viewportHeight: vh, gap: settings.gap) + 0.5 {
+                duration = max(duration, 0.3)
             }
             animate(g.key, duration: duration, spring: spring)
             if settings.swipe.focus {
